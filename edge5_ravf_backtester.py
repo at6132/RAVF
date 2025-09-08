@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime, timedelta
 import warnings
+import sys
 warnings.filterwarnings('ignore')
 
 class Edge5RAVFBacktester:
@@ -752,15 +753,32 @@ def load_data(file_path):
     print(f"📁 Loading data from {file_path}...")
     
     try:
-        # Load CSV without headers and assign column names
-        df = pd.read_csv(file_path, header=None)
-        
-        # Assign column names based on the data format
-        # Format: timestamp, open, high, low, close, volume, vwap, trades, buy_volume, buy_value
-        df.columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'vwap', 'trades', 'buy_volume', 'buy_value']
-        
-        # Convert timestamp from nanoseconds to datetime
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ns')
+        # Check if this is the live data format (datadoge.csv)
+        if file_path.endswith("datadoge.csv"):
+            # Live data format: Timestamp,DateTime,Open,High,Low,Close,Volume
+            df = pd.read_csv(file_path)
+            
+            # Rename columns to match expected format
+            df = df.rename(columns={
+                'Timestamp': 'timestamp',
+                'DateTime': 'datetime',
+                'Open': 'open',
+                'High': 'high',
+                'Low': 'low',
+                'Close': 'close',
+                'Volume': 'volume'
+            })
+            
+            # Convert timestamp from milliseconds to datetime
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            
+        else:
+            # Historical data format: timestamp, open, high, low, close, volume, vwap, trades, buy_volume, buy_value
+            df = pd.read_csv(file_path, header=None)
+            df.columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'vwap', 'trades', 'buy_volume', 'buy_value']
+            
+            # Convert timestamp from nanoseconds to datetime
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ns')
         
         # Ensure we have the required columns
         required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
@@ -779,25 +797,38 @@ def load_data(file_path):
 
 def main():
     """Main function to run backtest on all available months"""
+    # Check for --live flag
+    use_live_data = "--live" in sys.argv
+    
     # Initialize backtester
     backtester = Edge5RAVFBacktester(initial_capital=10000, fee_per_trade=0.0003)
     
-    # Get all available data files
-    data_dir = "Backtest/5m"
-    data_files = []
-    
-    if os.path.exists(data_dir):
-        for file in os.listdir(data_dir):
-            if file.startswith("DOGEUSDT-5m-2025-") and file.endswith(".csv"):
-                data_files.append(os.path.join(data_dir, file))
-    
-    if not data_files:
-        print("❌ No data files found in Backtest/5m/")
-        return
-    
-    # Sort files by month
-    data_files.sort()
-    print(f"📁 Found {len(data_files)} data files: {[os.path.basename(f) for f in data_files]}")
+    if use_live_data:
+        # Use datadoge.csv for live data testing
+        live_data_file = "datadoge.csv"
+        if not os.path.exists(live_data_file):
+            print(f"❌ Live data file not found: {live_data_file}")
+            return
+        
+        print(f"🔄 Running backtest with live data: {live_data_file}")
+        data_files = [live_data_file]
+    else:
+        # Get all available data files from Backtest/5m
+        data_dir = "Backtest/5m"
+        data_files = []
+        
+        if os.path.exists(data_dir):
+            for file in os.listdir(data_dir):
+                if file.startswith("DOGEUSDT-5m-2025-") and file.endswith(".csv"):
+                    data_files.append(os.path.join(data_dir, file))
+        
+        if not data_files:
+            print("❌ No data files found in Backtest/5m/")
+            return
+        
+        # Sort files by month
+        data_files.sort()
+        print(f"📁 Found {len(data_files)} data files: {[os.path.basename(f) for f in data_files]}")
     
     # Process all files
     all_trades = []
@@ -878,4 +909,13 @@ def main():
         print("❌ No trades generated across all months")
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] in ["--help", "-h"]:
+        print("EDGE-5 RAVF Strategy Backtester")
+        print("===============================")
+        print("Usage:")
+        print("  python edge5_ravf_backtester.py          # Run with historical data (Backtest/5m/)")
+        print("  python edge5_ravf_backtester.py --live   # Run with live data (datadoge.csv)")
+        print("  python edge5_ravf_backtester.py --help   # Show this help")
+        sys.exit(0)
+    
     main()
