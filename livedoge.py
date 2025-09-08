@@ -1510,32 +1510,33 @@ class LiveEdge5RAVFTrader:
                 prev_close = self.candles[-1]['close']
                 df['returns'] = np.log(df['close'] / prev_close)
             
-            # Calculate all indicators using full historical data
+            # Calculate indicators using appropriate data sources
             if len(self.candles) > 0:
-                # Create DataFrame from all historical candles for proper indicator calculations
+                # Create DataFrame from all historical candles for rolling indicators
                 hist_df = pd.DataFrame(self.candles)
-                print(f"🔍 Indicators Debug: Using {len(hist_df)} historical candles for all calculations")
+                print(f"🔍 Indicators Debug: Using {len(hist_df)} historical candles for rolling calculations")
                 
-                # Calculate all indicators on historical data
+                # Calculate rolling indicators on historical data
                 hist_df['atr'] = self._calculate_atr_safe(hist_df)
-                hist_df['clv'] = self._calculate_clv_safe(hist_df)
                 hist_df['vwap'] = self._calculate_vwap_safe(hist_df)
                 hist_df['zvol'] = self._calculate_relative_volume_safe(hist_df)
                 
                 # Get the latest values for current candle
                 df['atr'] = hist_df['atr'].iloc[-1] if len(hist_df) > 0 else 0.0
-                df['clv'] = hist_df['clv'].iloc[-1] if len(hist_df) > 0 else 0.0
                 df['vwap'] = hist_df['vwap'].iloc[-1] if len(hist_df) > 0 else df['close'].iloc[0]
                 df['zvol'] = hist_df['zvol'].iloc[-1] if len(hist_df) > 0 else 1.0
                 
-                print(f"🔍 Final Values: ATR={df['atr'].iloc[0]:.6f}, CLV={df['clv'].iloc[0]:.4f}, VWAP={df['vwap'].iloc[0]:.6f}, zVol={df['zvol'].iloc[0]:.2f}")
+                print(f"🔍 Rolling Values: ATR={df['atr'].iloc[0]:.6f}, VWAP={df['vwap'].iloc[0]:.6f}, zVol={df['zvol'].iloc[0]:.2f}")
             else:
                 # Fallback to current candle only
                 df['atr'] = self._calculate_atr_safe(df)
-                df['clv'] = self._calculate_clv_safe(df)
                 df['vwap'] = df['close'].iloc[0]
                 df['zvol'] = 1.0
                 print(f"🔍 No historical data, using current candle values only")
+            
+            # Calculate CLV on current candle only (single-candle indicator)
+            df['clv'] = self._calculate_clv_safe(df)
+            print(f"🔍 Current CLV: {df['clv'].iloc[0]:.4f} (O:{df['open'].iloc[0]:.6f} H:{df['high'].iloc[0]:.6f} L:{df['low'].iloc[0]:.6f} C:{df['close'].iloc[0]:.6f})")
             
             # Calculate additional indicators like backtester
             df['rv'] = np.nan
