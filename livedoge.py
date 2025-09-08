@@ -1701,10 +1701,11 @@ class LiveEdge5RAVFTrader:
                             last_line_count = current_line_count
                         
                         last_modified = current_modified
-                    else:
-                        if not file_waiting:
-                            print(f"⚠️ CSV file disappeared: {CSV_FILENAME}")
-                            file_waiting = True
+                else:
+                    # File doesn't exist
+                    if not file_waiting:
+                        print(f"⚠️ CSV file disappeared: {CSV_FILENAME}")
+                        file_waiting = True
                 
                 time.sleep(1)  # Check every second
                 
