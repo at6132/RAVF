@@ -865,40 +865,58 @@ class LiveEdge5RAVFTrader:
     def _calculate_clv_safe(self, df):
         """Calculate CLV with fallback for insufficient data"""
         if len(df) == 0:
+            print("🔍 CLV: Empty DataFrame, returning 0.0")
             return pd.Series([0.0])
         
         high = df['high']
         low = df['low']
         close = df['close']
         
+        print(f"🔍 CLV Debug: H={high.iloc[-1]:.6f}, L={low.iloc[-1]:.6f}, C={close.iloc[-1]:.6f}")
+        
         # Avoid division by zero
         hl_diff = high - low
         clv = np.where(hl_diff != 0, ((close - low) - (high - close)) / hl_diff, 0)
         clv = np.clip(clv, -1, 1)
+        
+        print(f"🔍 CLV Debug: hl_diff={hl_diff.iloc[-1]:.6f}, clv={clv[-1]:.4f}")
         return pd.Series(clv, index=df.index)
     
     def _calculate_vwap_safe(self, df, window=48):
         """Calculate VWAP with fallback for insufficient data - matches backtester"""
         if len(df) == 0:
+            print("🔍 VWAP: Empty DataFrame, returning 0.0")
             return pd.Series([0.0])
+        
+        print(f"🔍 VWAP Debug: len(df)={len(df)}, window={window}")
+        print(f"🔍 VWAP Debug: current close={df['close'].iloc[-1]:.6f}, volume={df['volume'].iloc[-1]:.2f}")
         
         # Use rolling VWAP like backtester
         volume_price = df['close'] * df['volume']
         rolling_vwap = volume_price.rolling(window=min(window, len(df))).sum() / df['volume'].rolling(window=min(window, len(df))).sum()
         df['vwap'] = rolling_vwap
+        
+        print(f"🔍 VWAP Debug: volume_price={volume_price.iloc[-1]:.6f}, rolling_vwap={rolling_vwap.iloc[-1]:.6f}")
         return df['vwap']
     
     def _calculate_relative_volume_safe(self, df, lookback=48):
         """Calculate relative volume with fallback for insufficient data - matches backtester"""
         if len(df) == 0:
+            print("🔍 zVol: Empty DataFrame, returning 1.0")
             return pd.Series([1.0])
+        
+        print(f"🔍 zVol Debug: len(df)={len(df)}, lookback={lookback}")
+        print(f"🔍 zVol Debug: current volume={df['volume'].iloc[-1]:.2f}")
         
         # Use simple rolling average like backtester
         if len(df) >= lookback:
-            df['zvol'] = df['volume'] / df['volume'].rolling(window=lookback).mean()
+            volume_mean = df['volume'].rolling(window=lookback).mean()
+            df['zvol'] = df['volume'] / volume_mean
+            print(f"🔍 zVol Debug: volume_mean={volume_mean.iloc[-1]:.2f}, zvol={df['zvol'].iloc[-1]:.2f}")
         else:
             # For very limited data, use a reasonable default
             df['zvol'] = 1.0
+            print(f"🔍 zVol Debug: Not enough data, using default 1.0")
         return df['zvol']
     
     def _calculate_returns(self, df):
@@ -1530,9 +1548,18 @@ class LiveEdge5RAVFTrader:
                 print(f"🔍 Sample data: {hist_df[['close', 'volume']].head()}")
                 
                 # Calculate rolling indicators on historical data
+                print(f"🔍 Before calculations - Hist DF types: close={hist_df['close'].dtype}, volume={hist_df['volume'].dtype}")
+                print(f"🔍 Before calculations - Sample close values: {hist_df['close'].head()}")
+                print(f"🔍 Before calculations - Sample volume values: {hist_df['volume'].head()}")
+                
                 hist_df['atr'] = self._calculate_atr_safe(hist_df)
+                print(f"🔍 ATR calculation result: {hist_df['atr'].tail()}")
+                
                 hist_df['vwap'] = self._calculate_vwap_safe(hist_df)
+                print(f"🔍 VWAP calculation result: {hist_df['vwap'].tail()}")
+                
                 hist_df['zvol'] = self._calculate_relative_volume_safe(hist_df)
+                print(f"🔍 zVol calculation result: {hist_df['zvol'].tail()}")
                 
                 # Calculate entropy using rolling window (matches backtester)
                 hist_df['close'] = pd.to_numeric(hist_df['close'], errors='coerce')
