@@ -251,7 +251,7 @@ class LiveEdge5RAVFTrader:
             elif event_type == 'HEARTBEAT':
                 # Just acknowledge heartbeat
                 pass
-                else:
+            else:
                 print(f"📡 WebSocket event: {event_type}")
             
         except Exception as e:
@@ -698,7 +698,7 @@ class LiveEdge5RAVFTrader:
                 
         except Exception as e:
             print(f"❌ Trailing stop update error: {e}")
-                        return False
+            return False
                 
     def cancel_order(self, order_ref):
         """Cancel order via COM API"""
@@ -750,11 +750,11 @@ class LiveEdge5RAVFTrader:
                 if trigger_ref in self.trigger_orders:
                     del self.trigger_orders[trigger_ref]
                 return True
-                    else:
+            else:
                 print(f"❌ Trigger order cancellation failed: {response.status_code}")
                 return False
                 
-            except Exception as e:
+        except Exception as e:
             print(f"❌ Trigger order cancellation error: {e}")
             return False
     
@@ -776,13 +776,13 @@ class LiveEdge5RAVFTrader:
             
             if response.status_code == 200:
                 return response.json()
-                    else:
+            else:
                 print(f"❌ Position fetch failed: {response.status_code}")
-                            return None
+                return None
                 
         except Exception as e:
             print(f"❌ Position fetch error: {e}")
-                        return None
+            return None
                 
     def close_position(self, position_ref, quantity=None):
         """Close position via COM API"""
@@ -850,59 +850,34 @@ class LiveEdge5RAVFTrader:
         return df['zvol']
     
     def _calculate_atr_safe(self, df, window=14):
-        """Calculate ATR with fallback for insufficient data"""
-        if len(df) < 2:
-            # For single row, use high-low range as ATR approximation
-            return abs(df['high'] - df['low'])
-        
-        high_low = df['high'] - df['low']
-        high_close = np.abs(df['high'] - df['close'].shift(1))
-        low_close = np.abs(df['low'] - df['close'].shift(1))
-        
-        true_range = np.maximum(high_low, np.maximum(high_close, low_close))
-        return true_range.rolling(window=min(window, len(df))).mean()
+        """Calculate ATR - EXACT match to backtester"""
+        df['tr'] = np.maximum(
+            df['high'] - df['low'],
+            np.maximum(
+                np.abs(df['high'] - df['close'].shift(1)),
+                np.abs(df['low'] - df['close'].shift(1))
+            )
+        )
+        df['atr'] = df['tr'].rolling(window=window).mean()
+        return df['atr']
     
     def _calculate_clv_safe(self, df):
-        """Calculate CLV with fallback for insufficient data"""
-        if len(df) == 0:
-            print("🔍 CLV: Empty DataFrame, returning 0.0")
-            return pd.Series([0.0])
-        
-        high = df['high']
-        low = df['low']
-        close = df['close']
-        
-        # Avoid division by zero
-        hl_diff = high - low
-        clv = np.where(hl_diff != 0, ((close - low) - (high - close)) / hl_diff, 0)
-        clv = np.clip(clv, -1, 1)
-        return pd.Series(clv, index=df.index)
+        """Calculate CLV - EXACT match to backtester"""
+        df['clv'] = ((df['close'] - df['low']) - (df['high'] - df['close'])) / (df['high'] - df['low'])
+        df['clv'] = df['clv'].clip(-1, 1)
+        return df['clv']
     
     def _calculate_vwap_safe(self, df, window=48):
-        """Calculate VWAP with fallback for insufficient data - matches backtester"""
-        if len(df) == 0:
-            print("🔍 VWAP: Empty DataFrame, returning 0.0")
-            return pd.Series([0.0])
-        
-        # Use rolling VWAP like backtester
+        """Calculate VWAP - EXACT match to backtester"""
         volume_price = df['close'] * df['volume']
-        rolling_vwap = volume_price.rolling(window=min(window, len(df))).sum() / df['volume'].rolling(window=min(window, len(df))).sum()
+        rolling_vwap = volume_price.rolling(window=window).sum() / df['volume'].rolling(window=window).sum()
         df['vwap'] = rolling_vwap
         return df['vwap']
     
     def _calculate_relative_volume_safe(self, df, lookback=48):
-        """Calculate relative volume with fallback for insufficient data - matches backtester"""
-        if len(df) == 0:
-            print("🔍 zVol: Empty DataFrame, returning 1.0")
-            return pd.Series([1.0])
-        
-        # Use simple rolling average like backtester
-        if len(df) >= lookback:
-            volume_mean = df['volume'].rolling(window=lookback).mean()
-            df['zvol'] = df['volume'] / volume_mean
-            else:
-            # For very limited data, use a reasonable default
-            df['zvol'] = 1.0
+        """Calculate relative volume - EXACT match to backtester"""
+        # Use the exact same calculation as backtester
+        df['zvol'] = df['volume'] / df['volume'].rolling(window=lookback).mean()
         return df['zvol']
     
     def _calculate_returns(self, df):
@@ -925,7 +900,7 @@ class LiveEdge5RAVFTrader:
         """Helper method to safely get timestamp from current data"""
         if isinstance(current['timestamp'], str):
             return pd.to_datetime(current['timestamp'])
-                else:
+        else:
             return current['timestamp']
     
     def _get_safe_numeric(self, current, field):
@@ -933,7 +908,7 @@ class LiveEdge5RAVFTrader:
         value = current[field]
         if isinstance(value, str):
             return float(value)
-            else:
+        else:
             return value
     
     def _print_debug_info(self, current):
@@ -946,7 +921,8 @@ class LiveEdge5RAVFTrader:
             clv = self._get_safe_numeric(current, 'clv')
             z_volume = self._get_safe_numeric(current, 'zvol')
             
-            print(f"🔍 Debug Info - Stored values: CLV={clv:.4f}, zVol={z_volume:.2f}, ATR={atr:.6f}, VWAP={vwap:.6f}")
+            z_volume_display = f"{z_volume:.2f}" if not pd.isna(z_volume) else "NaN"
+            print(f"🔍 Debug Info - Stored values: CLV={clv:.4f}, zVol={z_volume_display}, ATR={atr:.6f}, VWAP={vwap:.6f}")
             print(f"🔍 Debug Info - Current candle count: {len(self.candles)}")
             
             # Use entropy from stored candle data (calculated in process_new_candle)
@@ -986,7 +962,7 @@ class LiveEdge5RAVFTrader:
                 except Exception as e:
                     print(f"🔍 Entropy calculation error: {e}")
                     entropy_calc = 0.0
-                        else:
+            else:
                 entropy_calc = 0.0  # Not enough data for entropy calculation
                 print(f"🔍 Debug Info - Not enough data for entropy calculation: {len(self.candles)} candles")
             
@@ -1001,7 +977,7 @@ class LiveEdge5RAVFTrader:
             print(f"\n📊 INDICATOR VALUES:")
             print(f"   ATR: {atr:.6f} ({atr*100:.4f}%)")
             print(f"   CLV: {clv:.4f}")
-            print(f"   z-Volume: {z_volume:.2f}")
+            print(f"   z-Volume: {z_volume_display}")
             print(f"   Entropy: {entropy:.4f}")
             
             # VWAP bands
@@ -1019,7 +995,7 @@ class LiveEdge5RAVFTrader:
             # Long signal analysis
             long_vwap_ok = close_price <= vwap_lower
             long_clv_ok = clv <= self.CLV_LONG_THRESHOLD
-            long_volume_ok = z_volume >= self.VOLUME_THRESHOLD
+            long_volume_ok = not pd.isna(z_volume) and z_volume >= self.VOLUME_THRESHOLD
             
             print(f"   📈 LONG SIGNAL:")
             print(f"      VWAP Band: {'✅' if long_vwap_ok else '❌'} Price ${close_price:.6f} {'≤' if long_vwap_ok else '>'} ${vwap_lower:.6f}")
@@ -1032,10 +1008,13 @@ class LiveEdge5RAVFTrader:
                 clv_distance = clv - self.CLV_LONG_THRESHOLD
                 print(f"         Distance from trigger: +{clv_distance:.4f}")
             
-            print(f"      Volume: {'✅' if long_volume_ok else '❌'} {z_volume:.2f} {'≥' if long_volume_ok else '<'} {self.VOLUME_THRESHOLD}")
-            if not long_volume_ok:
-                volume_distance = self.VOLUME_THRESHOLD - z_volume
-                print(f"         Distance from trigger: {volume_distance:.2f}")
+            if pd.isna(z_volume):
+                print(f"      Volume: ❌ {z_volume_display} (insufficient data)")
+            else:
+                print(f"      Volume: {'✅' if long_volume_ok else '❌'} {z_volume:.2f} {'≥' if long_volume_ok else '<'} {self.VOLUME_THRESHOLD}")
+                if not long_volume_ok:
+                    volume_distance = self.VOLUME_THRESHOLD - z_volume
+                    print(f"         Distance from trigger: {volume_distance:.2f}")
             
             long_signal_ready = long_vwap_ok and long_clv_ok and long_volume_ok
             print(f"      Overall: {'🎯 READY' if long_signal_ready else '⏳ Waiting'}")
@@ -1043,7 +1022,7 @@ class LiveEdge5RAVFTrader:
             # Short signal analysis
             short_vwap_ok = close_price >= vwap_upper
             short_clv_ok = clv >= self.CLV_SHORT_THRESHOLD
-            short_volume_ok = z_volume >= self.VOLUME_THRESHOLD
+            short_volume_ok = not pd.isna(z_volume) and z_volume >= self.VOLUME_THRESHOLD
             
             print(f"\n   📉 SHORT SIGNAL:")
             print(f"      VWAP Band: {'✅' if short_vwap_ok else '❌'} Price ${close_price:.6f} {'≥' if short_vwap_ok else '<'} ${vwap_upper:.6f}")
@@ -1056,10 +1035,13 @@ class LiveEdge5RAVFTrader:
                 clv_distance = self.CLV_SHORT_THRESHOLD - clv
                 print(f"         Distance from trigger: +{clv_distance:.4f}")
             
-            print(f"      Volume: {'✅' if short_volume_ok else '❌'} {z_volume:.2f} {'≥' if short_volume_ok else '<'} {self.VOLUME_THRESHOLD}")
-            if not short_volume_ok:
-                volume_distance = self.VOLUME_THRESHOLD - z_volume
-                print(f"         Distance from trigger: {volume_distance:.2f}")
+            if pd.isna(z_volume):
+                print(f"      Volume: ❌ {z_volume_display} (insufficient data)")
+            else:
+                print(f"      Volume: {'✅' if short_volume_ok else '❌'} {z_volume:.2f} {'≥' if short_volume_ok else '<'} {self.VOLUME_THRESHOLD}")
+                if not short_volume_ok:
+                    volume_distance = self.VOLUME_THRESHOLD - z_volume
+                    print(f"         Distance from trigger: {volume_distance:.2f}")
             
             short_signal_ready = short_vwap_ok and short_clv_ok and short_volume_ok
             print(f"      Overall: {'🎯 READY' if short_signal_ready else '⏳ Waiting'}")
@@ -1328,7 +1310,7 @@ class LiveEdge5RAVFTrader:
     def _execute_exit(self, exit_reason, current):
         """Execute exit based on exit reason"""
         if not self.position:
-                    return
+                return
             
         position = self.position
         exit_price = self._get_exit_price(current, position, exit_reason)
@@ -1343,7 +1325,7 @@ class LiveEdge5RAVFTrader:
         # Handle trailing stops - send to COM
         if exit_reason == 'Trailing Stop':
             self._execute_trailing_stop_exit(current)
-                    return
+            return
             
         # COM automatically handles TP1, TP2, and regular stop losses via exit plan
         if exit_reason == 'TP1 Hit (60% scale-out)':
@@ -1358,7 +1340,7 @@ class LiveEdge5RAVFTrader:
             print(f"✅ Runner exit executed automatically by COM: {exit_reason}")
             # Position will be fully closed by COM
             self.position = None
-                            else:
+        else:
             # Regular stop loss - COM automatically handles via exit plan
             print(f"✅ Stop loss executed automatically by COM: {exit_reason}")
             self.position = None
@@ -1382,13 +1364,13 @@ class LiveEdge5RAVFTrader:
         if success:
             print(f"✅ Entropy exit executed: {exit_reason} - Position closed via COM")
             self.position = None
-                    else:
+        else:
             print(f"❌ Entropy exit failed: {exit_reason} - COM close order failed")
                     
     def _execute_trailing_stop_exit(self, current):
         """Execute trailing stop exit via COM trigger order"""
         if not self.position:
-                    return
+            return
             
         # Create trailing stop trigger order via COM
         trigger_type = "TRAILING_STOP"
@@ -1414,7 +1396,7 @@ class LiveEdge5RAVFTrader:
                 'trigger_price': trigger_price,
                 'status': 'ACTIVE'
             }
-                    else:
+        else:
             print(f"❌ Trailing stop trigger order failed")
     
     def _update_stop_loss_via_com(self, new_stop_loss):
@@ -1447,7 +1429,7 @@ class LiveEdge5RAVFTrader:
             if response.status_code == 200:
                 print(f"✅ Stop loss updated via COM: {new_stop_loss}")
                 return True
-                    else:
+            else:
                 print(f"❌ Stop loss update failed: {response.status_code}")
                 return False
             
@@ -1471,7 +1453,7 @@ class LiveEdge5RAVFTrader:
             return current['close']  # Exit at current market price
         elif exit_reason == 'Catastrophic Stop Loss':
             return current['close']  # Exit at current market price
-                    else:
+        else:
             return current['close']
     
     def _update_daily_tracking(self, exit_reason, net_pnl):
@@ -1486,7 +1468,7 @@ class LiveEdge5RAVFTrader:
             # Validate input data
             if len(candle_data) < 7:
                 print(f"❌ Invalid candle data: expected 7 columns, got {len(candle_data)}")
-                    return
+                return
                 
             # Convert candle data to DataFrame format
             df = pd.DataFrame([candle_data], columns=[
@@ -1500,7 +1482,7 @@ class LiveEdge5RAVFTrader:
             except Exception as e:
                 print(f"❌ Timestamp conversion error: {e}")
                 print(f"🔍 Raw datetime value: {candle_data[1]}")
-                    return
+                return
             
             # Convert numeric data to float
             try:
@@ -1519,7 +1501,7 @@ class LiveEdge5RAVFTrader:
             except Exception as e:
                 print(f"❌ Numeric conversion error: {e}")
                 print(f"🔍 Raw values: O:{candle_data[2]}, H:{candle_data[3]}, L:{candle_data[4]}, C:{candle_data[5]}, V:{candle_data[6]}")
-                    return
+                return
                 
             # Debug: Check data conversion
             print(f"🔍 Debug: Raw datetime: {candle_data[1]}, Converted timestamp: {df['timestamp'].iloc[0]}, Type: {type(df['timestamp'].iloc[0])}")
@@ -1581,18 +1563,12 @@ class LiveEdge5RAVFTrader:
                 # Get the latest values for current candle
                 df['atr'] = hist_df['atr'].iloc[-1] if len(hist_df) > 0 else 0.0
                 df['vwap'] = hist_df['vwap'].iloc[-1] if len(hist_df) > 0 else df['close'].iloc[0]
-                # For z-Volume, get the last non-NaN value
-                if len(hist_df) > 0:
-                    # Get the last z-Volume value, handling NaN properly
-                    last_zvol = hist_df['zvol'].iloc[-1]
-                    if pd.isna(last_zvol):
-                        # If last value is NaN, find the last valid value
-                        valid_zvol = hist_df['zvol'].dropna()
-                        df['zvol'] = valid_zvol.iloc[-1] if len(valid_zvol) > 0 else 1.0
-                    else:
-                        df['zvol'] = last_zvol
-                else:
-                    df['zvol'] = 1.0
+                # For z-Volume, get the latest value directly (no complex NaN handling)
+                df['zvol'] = hist_df['zvol'].iloc[-1] if len(hist_df) > 0 else 1.0
+                
+                # If it's NaN, keep it as NaN - don't force fallback values
+                if pd.isna(df['zvol'].iloc[0]):
+                    df['zvol'] = np.nan
                 df['entropy'] = hist_df['entropy'].iloc[-1] if len(hist_df) > 0 and not pd.isna(hist_df['entropy'].iloc[-1]) else 0.0
                 
                 print(f"🔍 Rolling Values: ATR={df['atr'].iloc[0]:.6f}, VWAP={df['vwap'].iloc[0]:.6f}, zVol={df['zvol'].iloc[0]:.2f}, Entropy={df['entropy'].iloc[0]:.4f}")
@@ -1654,7 +1630,7 @@ class LiveEdge5RAVFTrader:
                 # Check daily guardrails
                 if self._should_skip_signal(current):
                     print("⏸️ Skipping signal due to daily guardrails")
-                return
+                    return
             
                 # Check for mean reversion entry signals
                 signal = self._check_entry_signal(current)
@@ -1690,7 +1666,7 @@ class LiveEdge5RAVFTrader:
                         print(f"   - Stop Loss: {self.position['stop_loss']} (MARKET)")
                         print(f"   - Catastrophic Stop: {self.position['entry_price'] * (0.9910 if direction == 1 else 1.0090)} (MARKET)")
                         print(f"   - After TP1: Stop loss moves to breakeven automatically")
-            else:
+                    else:
                         print("❌ Failed to create entry order with exit plan")
                         self.position = None
             
@@ -1702,7 +1678,7 @@ class LiveEdge5RAVFTrader:
                     self.position = None
                     self.position_ref = None
                     self.position_status = None
-                return
+                    return
             
                 # Update position tracking
                 self._update_position_tracking(self.position, current)
@@ -1750,6 +1726,10 @@ class LiveEdge5RAVFTrader:
         clv = current['clv']
         zvol = current['zvol']
         
+        # Skip signal generation if z-Volume is NaN (insufficient data)
+        if pd.isna(zvol):
+            return None
+            
         # MEAN-REVERSION AVWAP SNAPBACK LONG
         if (current['regime'] == 'Mean-reversion' and
             close_price <= vwap - self.VWAP_ATR_MULTIPLIER * atr and
@@ -1798,7 +1778,7 @@ class LiveEdge5RAVFTrader:
                         # Load historical data WITHOUT triggering signals or trades
                         self.load_historical_candle(parts)
                         loaded_count += 1
-        except Exception as e:
+                except Exception as e:
                     print(f"❌ Error processing line {i+1}: {e}")
                     continue
             
@@ -1825,7 +1805,7 @@ class LiveEdge5RAVFTrader:
             try:
                 df['timestamp'] = pd.to_datetime(df['datetime'])
                 df['date'] = df['timestamp'].dt.date
-        except Exception as e:
+            except Exception as e:
                 return
             
             # Convert numeric data to float
@@ -1838,8 +1818,8 @@ class LiveEdge5RAVFTrader:
                 
                 # Check for any NaN values after conversion
                 if df[['open', 'high', 'low', 'close', 'volume']].isna().any().any():
-                return
-        except Exception as e:
+                    return
+            except Exception as e:
                 return
             
             # Calculate indicators in the same order as backtester
@@ -1885,18 +1865,12 @@ class LiveEdge5RAVFTrader:
                 # Get the latest values for current candle
                 df['atr'] = hist_df['atr'].iloc[-1] if len(hist_df) > 0 else 0.0
                 df['vwap'] = hist_df['vwap'].iloc[-1] if len(hist_df) > 0 else df['close'].iloc[0]
-                # For z-Volume, get the last non-NaN value
-                if len(hist_df) > 0:
-                    # Get the last z-Volume value, handling NaN properly
-                    last_zvol = hist_df['zvol'].iloc[-1]
-                    if pd.isna(last_zvol):
-                        # If last value is NaN, find the last valid value
-                        valid_zvol = hist_df['zvol'].dropna()
-                        df['zvol'] = valid_zvol.iloc[-1] if len(valid_zvol) > 0 else 1.0
-            else:
-                        df['zvol'] = last_zvol
-                else:
-                    df['zvol'] = 1.0
+                # For z-Volume, get the latest value directly (no complex NaN handling)
+                df['zvol'] = hist_df['zvol'].iloc[-1] if len(hist_df) > 0 else 1.0
+                
+                # If it's NaN, keep it as NaN - don't force fallback values
+                if pd.isna(df['zvol'].iloc[0]):
+                    df['zvol'] = np.nan
                 df['entropy'] = hist_df['entropy'].iloc[-1] if len(hist_df) > 0 and not pd.isna(hist_df['entropy'].iloc[-1]) else 0.0
             else:
                 # Fallback to current candle only
@@ -1981,7 +1955,7 @@ class LiveEdge5RAVFTrader:
                             last_line_count = current_line_count
                         
                         last_modified = current_modified
-                    else:
+                else:
                     # File doesn't exist
                     if not file_waiting:
                         print(f"⚠️ CSV file disappeared: {CSV_FILENAME}")
