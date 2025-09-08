@@ -642,7 +642,7 @@ class LiveEdge5RAVFTrader:
                     'trigger_type': trigger_type,
                     'trigger_price': trigger_price,
                     'order_side': order_side,
-                            'quantity': quantity,
+                    'quantity': quantity,
                     'order_type': order_type,
                     'price': price,
                     'status': 'ACTIVE'
@@ -818,7 +818,7 @@ class LiveEdge5RAVFTrader:
         except Exception as e:
             print(f"❌ Position close error: {e}")
             return False
-    
+            
     def _calculate_atr(self, df, window=14):
         """Calculate Average True Range"""
         df['tr'] = np.maximum(
@@ -942,15 +942,27 @@ class LiveEdge5RAVFTrader:
             clv = self._get_safe_numeric(current, 'clv')
             z_volume = self._get_safe_numeric(current, 'zvol')
             
-            # Calculate entropy if we have enough data
+            # Calculate entropy using historical data (matches backtester)
             entropy = 0.0
             if len(self.candles) >= 20:  # Need some history for entropy
                 try:
+                    # Get recent closes and calculate returns
                     recent_closes = [c['close'] for c in self.candles[-20:]]
                     returns = np.diff(np.log(recent_closes))
+                    
                     if len(returns) > 0:
-                        entropy = -np.sum(returns * np.log(np.abs(returns) + 1e-10))
-                except:
+                        # Calculate entropy as -sum(p * log(p)) where p is normalized returns (matches backtester)
+                        abs_returns = np.abs(returns)
+                        if abs_returns.sum() > 0:
+                            p = abs_returns / abs_returns.sum()
+                            p = p[p > 0]  # Remove zeros
+                            entropy = -np.sum(p * np.log(p + 1e-10))
+                        else:
+                            entropy = 0.0
+                    else:
+                        entropy = 0.0
+                except Exception as e:
+                    print(f"🔍 Entropy calculation error: {e}")
                     entropy = 0.0
             else:
                 entropy = 0.0  # Not enough data for entropy calculation
@@ -1353,7 +1365,7 @@ class LiveEdge5RAVFTrader:
     def _execute_trailing_stop_exit(self, current):
         """Execute trailing stop exit via COM trigger order"""
         if not self.position:
-                    return
+            return
             
         # Create trailing stop trigger order via COM
         trigger_type = "TRAILING_STOP"
@@ -1498,27 +1510,32 @@ class LiveEdge5RAVFTrader:
                 prev_close = self.candles[-1]['close']
                 df['returns'] = np.log(df['close'] / prev_close)
             
-            # Calculate other indicators with fallback for insufficient data
-            df['atr'] = self._calculate_atr_safe(df)
-            df['clv'] = self._calculate_clv_safe(df)
-            
-            # Use full candle history for VWAP calculation
+            # Calculate all indicators using full historical data
             if len(self.candles) > 0:
-                # Create DataFrame from all historical candles for proper VWAP calculation
+                # Create DataFrame from all historical candles for proper indicator calculations
                 hist_df = pd.DataFrame(self.candles)
-                hist_df['vwap'] = self._calculate_vwap_safe(hist_df)
-                df['vwap'] = hist_df['vwap'].iloc[-1] if len(hist_df) > 0 else df['close'].iloc[0]
-            else:
-                df['vwap'] = df['close'].iloc[0]
+                print(f"🔍 Indicators Debug: Using {len(hist_df)} historical candles for all calculations")
                 
-            # Use full candle history for relative volume calculation
-            if len(self.candles) > 0:
-                # Create DataFrame from all historical candles for proper zvol calculation
-                hist_df = pd.DataFrame(self.candles)
+                # Calculate all indicators on historical data
+                hist_df['atr'] = self._calculate_atr_safe(hist_df)
+                hist_df['clv'] = self._calculate_clv_safe(hist_df)
+                hist_df['vwap'] = self._calculate_vwap_safe(hist_df)
                 hist_df['zvol'] = self._calculate_relative_volume_safe(hist_df)
+                
+                # Get the latest values for current candle
+                df['atr'] = hist_df['atr'].iloc[-1] if len(hist_df) > 0 else 0.0
+                df['clv'] = hist_df['clv'].iloc[-1] if len(hist_df) > 0 else 0.0
+                df['vwap'] = hist_df['vwap'].iloc[-1] if len(hist_df) > 0 else df['close'].iloc[0]
                 df['zvol'] = hist_df['zvol'].iloc[-1] if len(hist_df) > 0 else 1.0
+                
+                print(f"🔍 Final Values: ATR={df['atr'].iloc[0]:.6f}, CLV={df['clv'].iloc[0]:.4f}, VWAP={df['vwap'].iloc[0]:.6f}, zVol={df['zvol'].iloc[0]:.2f}")
             else:
+                # Fallback to current candle only
+                df['atr'] = self._calculate_atr_safe(df)
+                df['clv'] = self._calculate_clv_safe(df)
+                df['vwap'] = df['close'].iloc[0]
                 df['zvol'] = 1.0
+                print(f"🔍 No historical data, using current candle values only")
             
             # Calculate additional indicators like backtester
             df['rv'] = np.nan
