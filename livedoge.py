@@ -1507,9 +1507,9 @@ class LiveEdge5RAVFTrader:
                 # Create DataFrame from all historical candles for proper VWAP calculation
                 hist_df = pd.DataFrame(self.candles)
                 hist_df['vwap'] = self._calculate_vwap_safe(hist_df)
-                df['vwap'] = hist_df['vwap'].iloc[-1] if len(hist_df) > 0 else close_price
+                df['vwap'] = hist_df['vwap'].iloc[-1] if len(hist_df) > 0 else df['close'].iloc[0]
             else:
-                df['vwap'] = close_price
+                df['vwap'] = df['close'].iloc[0]
                 
             # Use full candle history for relative volume calculation
             if len(self.candles) > 0:
