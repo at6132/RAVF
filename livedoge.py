@@ -960,8 +960,15 @@ class LiveEdge5RAVFTrader:
             clv = self._get_safe_numeric(current, 'clv')
             z_volume = self._get_safe_numeric(current, 'zvol')
             
-            # Calculate entropy using rolling window approach (matches backtester exactly)
-            entropy = 0.0
+            print(f"🔍 Debug Info - Stored values: CLV={clv:.4f}, zVol={z_volume:.2f}, ATR={atr:.6f}, VWAP={vwap:.6f}")
+            print(f"🔍 Debug Info - Current candle count: {len(self.candles)}")
+            
+            # Use entropy from stored candle data (calculated in process_new_candle)
+            entropy = self._get_safe_numeric(current, 'entropy')
+            print(f"🔍 Debug Info - Using stored entropy: {entropy:.4f}")
+            
+            # Also calculate entropy here for comparison
+            entropy_calc = 0.0
             if len(self.candles) >= 20:  # Need some history for entropy
                 try:
                     # Create DataFrame from historical candles for rolling entropy calculation
@@ -970,7 +977,7 @@ class LiveEdge5RAVFTrader:
                     hist_df['returns'] = np.log(hist_df['close'] / hist_df['close'].shift(1))
                     
                     # Calculate rolling entropy using backtester method
-                    def entropy_calc(returns):
+                    def entropy_calc_func(returns):
                         if len(returns) < 2:
                             return 0.0
                         returns = returns.dropna()
@@ -987,13 +994,15 @@ class LiveEdge5RAVFTrader:
                         except:
                             return 0.0
                     
-                    hist_df['entropy'] = hist_df['returns'].rolling(window=20).apply(entropy_calc, raw=False)
-                    entropy = hist_df['entropy'].iloc[-1] if len(hist_df) > 0 and not pd.isna(hist_df['entropy'].iloc[-1]) else 0.0
+                    hist_df['entropy'] = hist_df['returns'].rolling(window=20).apply(entropy_calc_func, raw=False)
+                    entropy_calc = hist_df['entropy'].iloc[-1] if len(hist_df) > 0 and not pd.isna(hist_df['entropy'].iloc[-1]) else 0.0
+                    print(f"🔍 Debug Info - Calculated entropy: {entropy_calc:.4f}")
                 except Exception as e:
                     print(f"🔍 Entropy calculation error: {e}")
-                    entropy = 0.0
+                    entropy_calc = 0.0
             else:
-                entropy = 0.0  # Not enough data for entropy calculation
+                entropy_calc = 0.0  # Not enough data for entropy calculation
+                print(f"🔍 Debug Info - Not enough data for entropy calculation: {len(self.candles)} candles")
             
             print(f"\n{'='*60}")
             print(f"🔍 DETAILED INDICATOR ANALYSIS")
