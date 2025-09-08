@@ -942,25 +942,35 @@ class LiveEdge5RAVFTrader:
             clv = self._get_safe_numeric(current, 'clv')
             z_volume = self._get_safe_numeric(current, 'zvol')
             
-            # Calculate entropy using historical data (matches backtester)
+            # Calculate entropy using rolling window approach (matches backtester exactly)
             entropy = 0.0
             if len(self.candles) >= 20:  # Need some history for entropy
                 try:
-                    # Get recent closes and calculate returns
-                    recent_closes = [c['close'] for c in self.candles[-20:]]
-                    returns = np.diff(np.log(recent_closes))
+                    # Create DataFrame from historical candles for rolling entropy calculation
+                    hist_df = pd.DataFrame(self.candles)
+                    hist_df['close'] = pd.to_numeric(hist_df['close'], errors='coerce')
+                    hist_df['returns'] = np.log(hist_df['close'] / hist_df['close'].shift(1))
                     
-                    if len(returns) > 0:
-                        # Calculate entropy as -sum(p * log(p)) where p is normalized returns (matches backtester)
-                        abs_returns = np.abs(returns)
-                        if abs_returns.sum() > 0:
+                    # Calculate rolling entropy using backtester method
+                    def entropy_calc(returns):
+                        if len(returns) < 2:
+                            return 0.0
+                        returns = returns.dropna()
+                        if len(returns) < 2:
+                            return 0.0
+                        try:
+                            # Calculate entropy as -sum(p * log(p)) where p is normalized returns
+                            abs_returns = np.abs(returns)
+                            if abs_returns.sum() == 0:
+                                return 0.0
                             p = abs_returns / abs_returns.sum()
                             p = p[p > 0]  # Remove zeros
-                            entropy = -np.sum(p * np.log(p + 1e-10))
-                        else:
-                            entropy = 0.0
-                    else:
-                        entropy = 0.0
+                            return -np.sum(p * np.log(p + 1e-10))
+                        except:
+                            return 0.0
+                    
+                    hist_df['entropy'] = hist_df['returns'].rolling(window=20).apply(entropy_calc, raw=False)
+                    entropy = hist_df['entropy'].iloc[-1] if len(hist_df) > 0 and not pd.isna(hist_df['entropy'].iloc[-1]) else 0.0
                 except Exception as e:
                     print(f"🔍 Entropy calculation error: {e}")
                     entropy = 0.0
@@ -1521,10 +1531,33 @@ class LiveEdge5RAVFTrader:
                 hist_df['vwap'] = self._calculate_vwap_safe(hist_df)
                 hist_df['zvol'] = self._calculate_relative_volume_safe(hist_df)
                 
+                # Calculate entropy using rolling window (matches backtester)
+                hist_df['close'] = pd.to_numeric(hist_df['close'], errors='coerce')
+                hist_df['returns'] = np.log(hist_df['close'] / hist_df['close'].shift(1))
+                
+                def entropy_calc(returns):
+                    if len(returns) < 2:
+                        return 0.0
+                    returns = returns.dropna()
+                    if len(returns) < 2:
+                        return 0.0
+                    try:
+                        abs_returns = np.abs(returns)
+                        if abs_returns.sum() == 0:
+                            return 0.0
+                        p = abs_returns / abs_returns.sum()
+                        p = p[p > 0]
+                        return -np.sum(p * np.log(p + 1e-10))
+                    except:
+                        return 0.0
+                
+                hist_df['entropy'] = hist_df['returns'].rolling(window=20).apply(entropy_calc, raw=False)
+                
                 # Get the latest values for current candle
                 df['atr'] = hist_df['atr'].iloc[-1] if len(hist_df) > 0 else 0.0
                 df['vwap'] = hist_df['vwap'].iloc[-1] if len(hist_df) > 0 else df['close'].iloc[0]
                 df['zvol'] = hist_df['zvol'].iloc[-1] if len(hist_df) > 0 else 1.0
+                df['entropy'] = hist_df['entropy'].iloc[-1] if len(hist_df) > 0 and not pd.isna(hist_df['entropy'].iloc[-1]) else 0.0
                 
                 print(f"🔍 Rolling Values: ATR={df['atr'].iloc[0]:.6f}, VWAP={df['vwap'].iloc[0]:.6f}, zVol={df['zvol'].iloc[0]:.2f}")
             else:
@@ -1532,6 +1565,7 @@ class LiveEdge5RAVFTrader:
                 df['atr'] = self._calculate_atr_safe(df)
                 df['vwap'] = df['close'].iloc[0]
                 df['zvol'] = 1.0
+                df['entropy'] = 0.0
                 print(f"🔍 No historical data, using current candle values only")
             
             # Calculate CLV on current candle only (single-candle indicator)
@@ -1559,7 +1593,8 @@ class LiveEdge5RAVFTrader:
                 'vwap': self._get_safe_numeric(current, 'vwap'),
                 'atr': self._get_safe_numeric(current, 'atr'),
                 'clv': self._get_safe_numeric(current, 'clv'),
-                'zvol': self._get_safe_numeric(current, 'zvol')
+                'zvol': self._get_safe_numeric(current, 'zvol'),
+                'entropy': self._get_safe_numeric(current, 'entropy')
             }
             self.candles.append(candle_data)
             
