@@ -1581,7 +1581,12 @@ class LiveEdge5RAVFTrader:
                 # Get the latest values for current candle
                 df['atr'] = hist_df['atr'].iloc[-1] if len(hist_df) > 0 else 0.0
                 df['vwap'] = hist_df['vwap'].iloc[-1] if len(hist_df) > 0 else df['close'].iloc[0]
-                df['zvol'] = hist_df['zvol'].iloc[-1] if len(hist_df) > 0 else 1.0
+                # For z-Volume, get the last non-NaN value
+                if len(hist_df) > 0:
+                    zvol_series = hist_df['zvol'].dropna()
+                    df['zvol'] = zvol_series.iloc[-1] if len(zvol_series) > 0 else 1.0
+                else:
+                    df['zvol'] = 1.0
                 df['entropy'] = hist_df['entropy'].iloc[-1] if len(hist_df) > 0 and not pd.isna(hist_df['entropy'].iloc[-1]) else 0.0
                 
                 print(f"🔍 Rolling Values: ATR={df['atr'].iloc[0]:.6f}, VWAP={df['vwap'].iloc[0]:.6f}, zVol={df['zvol'].iloc[0]:.2f}, Entropy={df['entropy'].iloc[0]:.4f}")
@@ -1769,12 +1774,12 @@ class LiveEdge5RAVFTrader:
             # Skip header if present
             start_line = 1 if lines[0].strip().startswith('timestamp') else 0
             
-            # Load the last 100 candles to ensure all indicators have enough data
-            # VWAP needs 48, Entropy needs 20, ATR needs 14, so 100 should be plenty
+            # Load the last 150 candles to ensure all indicators have enough data
+            # VWAP needs 48, Entropy needs 20, ATR needs 14, so 150 should be plenty
             total_lines = len(lines) - start_line
-            if total_lines > 100:
+            if total_lines > 150:
                 # Start from the end and work backwards
-                start_index = len(lines) - 100
+                start_index = len(lines) - 150
             else:
                 start_index = start_line
             
@@ -1784,8 +1789,8 @@ class LiveEdge5RAVFTrader:
                     # Parse CSV line
                     parts = lines[i].strip().split(',')
                     if len(parts) >= 7:
-                        # Process the candle data
-                        self.process_new_candle(parts)
+                        # Load historical data WITHOUT triggering signals or trades
+                        self.load_historical_candle(parts)
                         loaded_count += 1
                 except Exception as e:
                     print(f"❌ Error processing line {i+1}: {e}")
@@ -1797,6 +1802,133 @@ class LiveEdge5RAVFTrader:
         except Exception as e:
             print(f"❌ Error loading historical data: {e}")
             return False
+
+    def load_historical_candle(self, candle_data):
+        """Load historical candle data for indicator calculations only (no trading logic)"""
+        try:
+            # Validate input data
+            if len(candle_data) < 7:
+                return
+                
+            # Convert candle data to DataFrame format
+            df = pd.DataFrame([candle_data], columns=[
+                'timestamp', 'datetime', 'open', 'high', 'low', 'close', 'volume'
+            ])
+            
+            # Convert timestamp with error handling
+            try:
+                df['timestamp'] = pd.to_datetime(df['datetime'])
+                df['date'] = df['timestamp'].dt.date
+            except Exception as e:
+                return
+            
+            # Convert numeric data to float
+            try:
+                df['open'] = pd.to_numeric(df['open'], errors='coerce')
+                df['high'] = pd.to_numeric(df['high'], errors='coerce')
+                df['low'] = pd.to_numeric(df['low'], errors='coerce')
+                df['close'] = pd.to_numeric(df['close'], errors='coerce')
+                df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
+                
+                # Check for any NaN values after conversion
+                if df[['open', 'high', 'low', 'close', 'volume']].isna().any().any():
+                    return
+            except Exception as e:
+                return
+            
+            # Calculate indicators in the same order as backtester
+            # First calculate returns (needs previous close)
+            df['returns'] = np.nan
+            if len(self.candles) > 0:
+                # Use previous close from stored candles
+                prev_close = self.candles[-1]['close']
+                df['returns'] = np.log(df['close'] / prev_close)
+            
+            # Calculate indicators using appropriate data sources
+            if len(self.candles) > 0:
+                # Create DataFrame from all historical candles for rolling indicators
+                hist_df = pd.DataFrame(self.candles)
+                
+                # Calculate rolling indicators on historical data
+                hist_df['atr'] = self._calculate_atr_safe(hist_df)
+                hist_df['vwap'] = self._calculate_vwap_safe(hist_df)
+                hist_df['zvol'] = self._calculate_relative_volume_safe(hist_df)
+                
+                # Calculate entropy using rolling window (matches backtester)
+                hist_df['close'] = pd.to_numeric(hist_df['close'], errors='coerce')
+                hist_df['returns'] = np.log(hist_df['close'] / hist_df['close'].shift(1))
+                
+                def entropy_calc(returns):
+                    if len(returns) < 2:
+                        return 0.0
+                    returns = returns.dropna()
+                    if len(returns) < 2:
+                        return 0.0
+                    try:
+                        abs_returns = np.abs(returns)
+                        if abs_returns.sum() == 0:
+                            return 0.0
+                        p = abs_returns / abs_returns.sum()
+                        p = p[p > 0]
+                        return -np.sum(p * np.log(p + 1e-10))
+                    except:
+                        return 0.0
+                
+                hist_df['entropy'] = hist_df['returns'].rolling(window=20).apply(entropy_calc, raw=False)
+                
+                # Get the latest values for current candle
+                df['atr'] = hist_df['atr'].iloc[-1] if len(hist_df) > 0 else 0.0
+                df['vwap'] = hist_df['vwap'].iloc[-1] if len(hist_df) > 0 else df['close'].iloc[0]
+                # For z-Volume, get the last non-NaN value
+                if len(hist_df) > 0:
+                    zvol_series = hist_df['zvol'].dropna()
+                    df['zvol'] = zvol_series.iloc[-1] if len(zvol_series) > 0 else 1.0
+                else:
+                    df['zvol'] = 1.0
+                df['entropy'] = hist_df['entropy'].iloc[-1] if len(hist_df) > 0 and not pd.isna(hist_df['entropy'].iloc[-1]) else 0.0
+            else:
+                # Fallback to current candle only
+                df['atr'] = self._calculate_atr_safe(df)
+                df['vwap'] = df['close'].iloc[0]
+                df['zvol'] = 1.0
+                df['entropy'] = 0.0
+            
+            # Calculate CLV on current candle only (single-candle indicator)
+            df['clv'] = self._calculate_clv_safe(df)
+            
+            # Calculate additional indicators like backtester
+            df['rv'] = np.nan
+            df['skew'] = np.nan
+            df['kurt'] = np.nan
+            
+            # For now, set regime to Mean-reversion (as per live strategy focus)
+            df['regime'] = 'Mean-reversion'
+            
+            current = df.iloc[0]
+            
+            # Store candle data for historical analysis (NO TRADING LOGIC)
+            candle_data = {
+                'timestamp': current['timestamp'],
+                'open': self._get_safe_numeric(current, 'open'),
+                'high': self._get_safe_numeric(current, 'high'),
+                'low': self._get_safe_numeric(current, 'low'),
+                'close': self._get_safe_numeric(current, 'close'),
+                'volume': self._get_safe_numeric(current, 'volume'),
+                'vwap': self._get_safe_numeric(current, 'vwap'),
+                'atr': self._get_safe_numeric(current, 'atr'),
+                'clv': self._get_safe_numeric(current, 'clv'),
+                'zvol': self._get_safe_numeric(current, 'zvol'),
+                'entropy': self._get_safe_numeric(current, 'entropy')
+            }
+            self.candles.append(candle_data)
+            
+            # Keep only last 100 candles to prevent memory issues
+            if len(self.candles) > 100:
+                self.candles = self.candles[-100:]
+                
+        except Exception as e:
+            # Silently skip problematic candles during historical loading
+            pass
 
     def monitor_csv_file(self):
         """Monitor CSV file for new candles"""
