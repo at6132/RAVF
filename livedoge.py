@@ -251,7 +251,7 @@ class LiveEdge5RAVFTrader:
             elif event_type == 'HEARTBEAT':
                 # Just acknowledge heartbeat
                 pass
-                else:
+            else:
                 print(f"📡 WebSocket event: {event_type}")
             
         except Exception as e:
@@ -698,7 +698,7 @@ class LiveEdge5RAVFTrader:
                 
         except Exception as e:
             print(f"❌ Trailing stop update error: {e}")
-                        return False
+            return False
                 
     def cancel_order(self, order_ref):
         """Cancel order via COM API"""
@@ -750,11 +750,11 @@ class LiveEdge5RAVFTrader:
                 if trigger_ref in self.trigger_orders:
                     del self.trigger_orders[trigger_ref]
                 return True
-                    else:
+            else:
                 print(f"❌ Trigger order cancellation failed: {response.status_code}")
                 return False
                 
-            except Exception as e:
+        except Exception as e:
             print(f"❌ Trigger order cancellation error: {e}")
             return False
     
@@ -776,13 +776,13 @@ class LiveEdge5RAVFTrader:
             
             if response.status_code == 200:
                 return response.json()
-                    else:
+            else:
                 print(f"❌ Position fetch failed: {response.status_code}")
-                            return None
+                return None
                 
         except Exception as e:
             print(f"❌ Position fetch error: {e}")
-                        return None
+            return None
                 
     def close_position(self, position_ref, quantity=None):
         """Close position via COM API"""
@@ -900,7 +900,7 @@ class LiveEdge5RAVFTrader:
         if len(df) >= lookback:
             volume_mean = df['volume'].rolling(window=lookback).mean()
             df['zvol'] = df['volume'] / volume_mean
-            else:
+        else:
             # For very limited data, use a reasonable default
             df['zvol'] = 1.0
         return df['zvol']
@@ -925,7 +925,7 @@ class LiveEdge5RAVFTrader:
         """Helper method to safely get timestamp from current data"""
         if isinstance(current['timestamp'], str):
             return pd.to_datetime(current['timestamp'])
-                else:
+        else:
             return current['timestamp']
     
     def _get_safe_numeric(self, current, field):
@@ -933,7 +933,7 @@ class LiveEdge5RAVFTrader:
         value = current[field]
         if isinstance(value, str):
             return float(value)
-            else:
+        else:
             return value
     
     def _print_debug_info(self, current):
@@ -986,7 +986,7 @@ class LiveEdge5RAVFTrader:
                 except Exception as e:
                     print(f"🔍 Entropy calculation error: {e}")
                     entropy_calc = 0.0
-                        else:
+            else:
                 entropy_calc = 0.0  # Not enough data for entropy calculation
                 print(f"🔍 Debug Info - Not enough data for entropy calculation: {len(self.candles)} candles")
             
@@ -1338,12 +1338,12 @@ class LiveEdge5RAVFTrader:
         # Handle entropy exits (monitored locally, then send market close order to COM)
         if exit_reason in ['5-Bar Time Stop', 'Stall Filter (Bar 3)', 'Catastrophic Stop Loss']:
             self._execute_entropy_exit(exit_reason, current)
-                    return
+            return
             
         # Handle trailing stops - send to COM
         if exit_reason == 'Trailing Stop':
             self._execute_trailing_stop_exit(current)
-                    return
+            return
             
         # COM automatically handles TP1, TP2, and regular stop losses via exit plan
         if exit_reason == 'TP1 Hit (60% scale-out)':
@@ -1358,7 +1358,7 @@ class LiveEdge5RAVFTrader:
             print(f"✅ Runner exit executed automatically by COM: {exit_reason}")
             # Position will be fully closed by COM
             self.position = None
-                    else:
+        else:
             # Regular stop loss - COM automatically handles via exit plan
             print(f"✅ Stop loss executed automatically by COM: {exit_reason}")
             self.position = None
@@ -1372,7 +1372,7 @@ class LiveEdge5RAVFTrader:
         """
         if not self.position or not self.position_ref:
             print(f"❌ Cannot execute entropy exit: No position or position_ref")
-                    return
+            return
         
         print(f"🔥 ENTROPY EXIT: {exit_reason} - Strategy detected locally, sending market close order to COM")
         
@@ -1382,13 +1382,13 @@ class LiveEdge5RAVFTrader:
         if success:
             print(f"✅ Entropy exit executed: {exit_reason} - Position closed via COM")
             self.position = None
-                    else:
+        else:
             print(f"❌ Entropy exit failed: {exit_reason} - COM close order failed")
                     
     def _execute_trailing_stop_exit(self, current):
         """Execute trailing stop exit via COM trigger order"""
         if not self.position:
-                    return
+            return
             
         # Create trailing stop trigger order via COM
         trigger_type = "TRAILING_STOP"
@@ -1414,7 +1414,7 @@ class LiveEdge5RAVFTrader:
                 'trigger_price': trigger_price,
                 'status': 'ACTIVE'
             }
-                    else:
+        else:
             print(f"❌ Trailing stop trigger order failed")
     
     def _update_stop_loss_via_com(self, new_stop_loss):
@@ -1447,7 +1447,7 @@ class LiveEdge5RAVFTrader:
             if response.status_code == 200:
                 print(f"✅ Stop loss updated via COM: {new_stop_loss}")
                 return True
-                    else:
+            else:
                 print(f"❌ Stop loss update failed: {response.status_code}")
                 return False
             
@@ -1471,7 +1471,7 @@ class LiveEdge5RAVFTrader:
             return current['close']  # Exit at current market price
         elif exit_reason == 'Catastrophic Stop Loss':
             return current['close']  # Exit at current market price
-                    else:
+        else:
             return current['close']
     
     def _update_daily_tracking(self, exit_reason, net_pnl):
@@ -1497,7 +1497,7 @@ class LiveEdge5RAVFTrader:
             try:
                 df['timestamp'] = pd.to_datetime(df['datetime'])
                 df['date'] = df['timestamp'].dt.date
-        except Exception as e:
+            except Exception as e:
                 print(f"❌ Timestamp conversion error: {e}")
                 print(f"🔍 Raw datetime value: {candle_data[1]}")
                 return
@@ -1516,7 +1516,7 @@ class LiveEdge5RAVFTrader:
                     print(f"🔍 Raw values: O:{candle_data[2]}, H:{candle_data[3]}, L:{candle_data[4]}, C:{candle_data[5]}, V:{candle_data[6]}")
                     return
             
-        except Exception as e:
+            except Exception as e:
                 print(f"❌ Numeric conversion error: {e}")
                 print(f"🔍 Raw values: O:{candle_data[2]}, H:{candle_data[3]}, L:{candle_data[4]}, C:{candle_data[5]}, V:{candle_data[6]}")
                 return
@@ -1775,7 +1775,7 @@ class LiveEdge5RAVFTrader:
             if total_lines > 100:
                 # Start from the end and work backwards
                 start_index = len(lines) - 100
-                else:
+            else:
                 start_index = start_line
             
             loaded_count = 0
@@ -1837,7 +1837,7 @@ class LiveEdge5RAVFTrader:
                             last_line_count = current_line_count
                         
                         last_modified = current_modified
-                            else:
+                else:
                     # File doesn't exist
                     if not file_waiting:
                         print(f"⚠️ CSV file disappeared: {CSV_FILENAME}")
