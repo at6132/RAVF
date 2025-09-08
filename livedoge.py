@@ -1501,8 +1501,24 @@ class LiveEdge5RAVFTrader:
             # Calculate other indicators with fallback for insufficient data
             df['atr'] = self._calculate_atr_safe(df)
             df['clv'] = self._calculate_clv_safe(df)
-            df['vwap'] = self._calculate_vwap_safe(df)
-            df['zvol'] = self._calculate_relative_volume_safe(df)
+            
+            # Use full candle history for VWAP calculation
+            if len(self.candles) > 0:
+                # Create DataFrame from all historical candles for proper VWAP calculation
+                hist_df = pd.DataFrame(self.candles)
+                hist_df['vwap'] = self._calculate_vwap_safe(hist_df)
+                df['vwap'] = hist_df['vwap'].iloc[-1] if len(hist_df) > 0 else close_price
+            else:
+                df['vwap'] = close_price
+                
+            # Use full candle history for relative volume calculation
+            if len(self.candles) > 0:
+                # Create DataFrame from all historical candles for proper zvol calculation
+                hist_df = pd.DataFrame(self.candles)
+                hist_df['zvol'] = self._calculate_relative_volume_safe(hist_df)
+                df['zvol'] = hist_df['zvol'].iloc[-1] if len(hist_df) > 0 else 1.0
+            else:
+                df['zvol'] = 1.0
             
             # Calculate additional indicators like backtester
             df['rv'] = np.nan
