@@ -1525,6 +1525,9 @@ class LiveEdge5RAVFTrader:
                 # Create DataFrame from all historical candles for rolling indicators
                 hist_df = pd.DataFrame(self.candles)
                 print(f"🔍 Indicators Debug: Using {len(hist_df)} historical candles for rolling calculations")
+                print(f"🔍 Hist DF columns: {list(hist_df.columns)}")
+                print(f"🔍 Hist DF shape: {hist_df.shape}")
+                print(f"🔍 Sample data: {hist_df[['close', 'volume']].head()}")
                 
                 # Calculate rolling indicators on historical data
                 hist_df['atr'] = self._calculate_atr_safe(hist_df)
@@ -1559,7 +1562,8 @@ class LiveEdge5RAVFTrader:
                 df['zvol'] = hist_df['zvol'].iloc[-1] if len(hist_df) > 0 else 1.0
                 df['entropy'] = hist_df['entropy'].iloc[-1] if len(hist_df) > 0 and not pd.isna(hist_df['entropy'].iloc[-1]) else 0.0
                 
-                print(f"🔍 Rolling Values: ATR={df['atr'].iloc[0]:.6f}, VWAP={df['vwap'].iloc[0]:.6f}, zVol={df['zvol'].iloc[0]:.2f}")
+                print(f"🔍 Rolling Values: ATR={df['atr'].iloc[0]:.6f}, VWAP={df['vwap'].iloc[0]:.6f}, zVol={df['zvol'].iloc[0]:.2f}, Entropy={df['entropy'].iloc[0]:.4f}")
+                print(f"🔍 Hist DF latest values: ATR={hist_df['atr'].iloc[-1]:.6f}, VWAP={hist_df['vwap'].iloc[-1]:.6f}, zVol={hist_df['zvol'].iloc[-1]:.2f}, Entropy={hist_df['entropy'].iloc[-1]:.4f}")
             else:
                 # Fallback to current candle only
                 df['atr'] = self._calculate_atr_safe(df)
