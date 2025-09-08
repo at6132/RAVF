@@ -1769,14 +1769,50 @@ class LiveEdge5RAVFTrader:
             
             return 'MeanRev_Short', -1
             
+    def load_historical_data(self):
+        """Load historical data from CSV file at startup"""
+        if not os.path.exists(CSV_FILENAME):
+            print(f"❌ CSV file not found: {CSV_FILENAME}")
+            return False
+        
+        try:
+            print(f"📊 Loading historical data from {CSV_FILENAME}...")
+            with open(CSV_FILENAME, 'r') as f:
+                lines = f.readlines()
+            
+            # Skip header if present
+            start_line = 1 if lines[0].strip().startswith('timestamp') else 0
+            
+            loaded_count = 0
+            for i, line in enumerate(lines[start_line:], start_line):
+                try:
+                    # Parse CSV line
+                    parts = line.strip().split(',')
+                    if len(parts) >= 7:
+                        # Process the candle data
+                        self.process_new_candle(parts)
+                        loaded_count += 1
+                        
+                        # Stop after loading enough data for indicators (50+ candles)
+                        if loaded_count >= 50:
+                            break
+                except Exception as e:
+                    print(f"❌ Error processing line {i+1}: {e}")
+                    continue
+            
+            print(f"✅ Loaded {loaded_count} historical candles")
+            return loaded_count > 0
+            
+        except Exception as e:
+            print(f"❌ Error loading historical data: {e}")
+            return False
+
     def monitor_csv_file(self):
         """Monitor CSV file for new candles"""
         print(f"📁 Monitoring {CSV_FILENAME} for new candles...")
         
-        # Check if CSV file exists at startup
-        if not os.path.exists(CSV_FILENAME):
-            print(f"❌ CSV file not found: {CSV_FILENAME}")
-            print(f"🔍 Please ensure the CSV file exists and contains candle data")
+        # Load historical data first
+        if not self.load_historical_data():
             print(f"⏳ Waiting for file to appear...")
         
         last_modified = 0
