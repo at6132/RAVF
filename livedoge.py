@@ -524,7 +524,7 @@ class LiveEdge5RAVFTrader:
         signature = self.create_hmac_signature(timestamp, "POST", "/api/v1/orders/orders", body)
         
         headers = {
-            "Authorization": f"HMAC key_id={API_KEY}, signature={signature}, ts={timestamp}",
+            "Authorization": f'HMAC key_id="{API_KEY}", signature="{signature}", ts={timestamp}',
             "X-Idempotency-Key": idempotency_key
         }
         
@@ -623,7 +623,7 @@ class LiveEdge5RAVFTrader:
         signature = self.create_hmac_signature(timestamp, "POST", "/api/v1/trigger-orders", body)
         
         headers = {
-            "Authorization": f"HMAC key_id={API_KEY}, signature={signature}, ts={timestamp}",
+            "Authorization": f'HMAC key_id="{API_KEY}", signature="{signature}", ts={timestamp}',
             "X-Idempotency-Key": idempotency_key
         }
         
@@ -678,7 +678,7 @@ class LiveEdge5RAVFTrader:
         signature = self.create_hmac_signature(timestamp, "PUT", f"/api/v1/positions/{position_ref}/trailing-stop", body)
         
         headers = {
-            "Authorization": f"HMAC key_id={API_KEY}, signature={signature}, ts={timestamp}",
+            "Authorization": f'HMAC key_id="{API_KEY}", signature="{signature}", ts={timestamp}',
             "Content-Type": "application/json"
         }
         
@@ -707,7 +707,7 @@ class LiveEdge5RAVFTrader:
         signature = self.create_hmac_signature(timestamp, "DELETE", f"/api/v1/orders/orders/{order_ref}/cancel", body)
         
         headers = {
-            "Authorization": f"HMAC key_id={API_KEY}, signature={signature}, ts={timestamp}"
+            "Authorization": f'HMAC key_id="{API_KEY}", signature="{signature}", ts={timestamp}'
         }
         
         try:
@@ -736,7 +736,7 @@ class LiveEdge5RAVFTrader:
         signature = self.create_hmac_signature(timestamp, "DELETE", f"/api/v1/trigger-orders/{trigger_ref}/cancel", body)
         
         headers = {
-            "Authorization": f"HMAC key_id={API_KEY}, signature={signature}, ts={timestamp}"
+            "Authorization": f'HMAC key_id="{API_KEY}", signature="{signature}", ts={timestamp}'
         }
         
         try:
@@ -765,7 +765,7 @@ class LiveEdge5RAVFTrader:
         signature = self.create_hmac_signature(timestamp, "GET", "/api/v1/positions", body)
         
         headers = {
-            "Authorization": f"HMAC key_id={API_KEY}, signature={signature}, ts={timestamp}"
+            "Authorization": f'HMAC key_id="{API_KEY}", signature="{signature}", ts={timestamp}'
         }
         
         try:
@@ -797,7 +797,7 @@ class LiveEdge5RAVFTrader:
         signature = self.create_hmac_signature(timestamp, "POST", f"/api/v1/positions/{position_ref}/close", body)
         
         headers = {
-            "Authorization": f"HMAC key_id={API_KEY}, signature={signature}, ts={timestamp}",
+            "Authorization": f'HMAC key_id="{API_KEY}", signature="{signature}", ts={timestamp}',
             "Content-Type": "application/json"
         }
         
@@ -1415,7 +1415,7 @@ class LiveEdge5RAVFTrader:
         signature = self.create_hmac_signature(timestamp, "PUT", f"/api/v1/positions/{self.position_ref}/stop-loss", body)
         
         headers = {
-            "Authorization": f"HMAC key_id={API_KEY}, signature={signature}, ts={timestamp}",
+            "Authorization": f'HMAC key_id="{API_KEY}", signature="{signature}", ts={timestamp}',
             "Content-Type": "application/json"
         }
         
