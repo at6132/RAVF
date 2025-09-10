@@ -581,12 +581,62 @@ class Edge5RAVFBacktester:
         if exit_reason == '5-Bar Time Stop':
             self.daily_time_stops += 1
     
-    def run_backtest(self, df):
+    def save_indicators_csv(self, df):
+        """Save all calculated indicators to CSV for analysis"""
+        try:
+            # Select relevant columns for indicators
+            indicator_columns = [
+                'timestamp', 'open', 'high', 'low', 'close', 'volume',
+                'atr', 'vwap', 'clv', 'zvol', 'entropy', 'rv', 'skew', 'kurt',
+                'regime', 'returns'
+            ]
+            
+            # Create indicators DataFrame
+            indicators_df = df[indicator_columns].copy()
+            
+            # Add calculated fields for analysis
+            indicators_df['vwap_upper'] = indicators_df['vwap'] + (0.6 * indicators_df['atr'])
+            indicators_df['vwap_lower'] = indicators_df['vwap'] - (0.6 * indicators_df['atr'])
+            indicators_df['price_vs_vwap_pct'] = ((indicators_df['close'] - indicators_df['vwap']) / indicators_df['vwap']) * 100
+            
+            # Add signal analysis columns
+            indicators_df['long_vwap_ok'] = indicators_df['close'] <= indicators_df['vwap_lower']
+            indicators_df['short_vwap_ok'] = indicators_df['close'] >= indicators_df['vwap_upper']
+            indicators_df['long_clv_ok'] = indicators_df['clv'] <= -0.4
+            indicators_df['short_clv_ok'] = indicators_df['clv'] >= 0.4
+            indicators_df['volume_ok'] = indicators_df['zvol'] >= 1.2
+            
+            # Add signal flags
+            indicators_df['long_signal'] = (
+                indicators_df['long_vwap_ok'] & 
+                indicators_df['long_clv_ok'] & 
+                indicators_df['volume_ok']
+            )
+            indicators_df['short_signal'] = (
+                indicators_df['short_vwap_ok'] & 
+                indicators_df['short_clv_ok'] & 
+                indicators_df['volume_ok']
+            )
+            
+            # Save to CSV
+            filename = 'backtest_indicators_with_signals.csv'
+            indicators_df.to_csv(filename, index=False)
+            print(f"💾 Indicators saved to '{filename}' ({len(indicators_df)} candles)")
+            print(f"📊 Columns: {list(indicators_df.columns)}")
+            
+        except Exception as e:
+            print(f"❌ Error saving indicators CSV: {e}")
+    
+    def run_backtest(self, df, save_indicators_csv=False):
         """Run the backtest"""
         print(f"🚀 Starting backtest on {len(df)} candles...")
         
         # Calculate indicators
         df = self.calculate_indicators(df)
+        
+        # Save indicators CSV if requested
+        if save_indicators_csv:
+            self.save_indicators_csv(df)
         
         # Process each candle
         for i, (idx, row) in enumerate(df.iterrows()):
@@ -849,7 +899,7 @@ def main():
         total_candles += len(df)
         
         # Run backtest on this month
-        month_trades = backtester.run_backtest(df)
+        month_trades = backtester.run_backtest(df, save_indicators_csv=use_live_data)
         
         # Collect trades for this month
         if backtester.trades:
@@ -914,8 +964,11 @@ if __name__ == "__main__":
         print("===============================")
         print("Usage:")
         print("  python edge5_ravf_backtester.py          # Run with historical data (Backtest/5m/)")
-        print("  python edge5_ravf_backtester.py --live   # Run with live data (datadoge.csv)")
+        print("  python edge5_ravf_backtester.py --live   # Run with live data (datadoge.csv) + save indicators CSV")
         print("  python edge5_ravf_backtester.py --help   # Show this help")
+        print("")
+        print("Features:")
+        print("  --live flag: Uses datadoge.csv and saves all calculated indicators to 'backtest_indicators_with_signals.csv'")
         sys.exit(0)
     
     main()

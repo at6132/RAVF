@@ -212,6 +212,10 @@ class LiveEdge5RAVFTrader:
         # Historical data storage
         self.candles = []  # Store historical candle data for indicators
         
+        # CSV logging for indicators
+        self.indicators_csv_filename = 'live_indicators_log.csv'
+        self.indicators_csv_initialized = False
+        
         # WebSocket connection for real-time updates
         self.ws_client = COMWebSocketClient(
             base_url=COM_BASE_URL,
@@ -230,6 +234,7 @@ class LiveEdge5RAVFTrader:
         print(f"🔐 Strategy: {STRATEGY_NAME} ({STRATEGY_ID})")
         print(f"🔑 API Key: {API_KEY[:20]}...")
         print(f"🧂 Salt: {SALT[:20]}...")
+        print(f"💾 Indicators will be logged to: {self.indicators_csv_filename}")
     
     async def handle_websocket_event(self, event):
         """Handle WebSocket events from COM"""
@@ -253,7 +258,7 @@ class LiveEdge5RAVFTrader:
                 pass
             else:
                 print(f"📡 WebSocket event: {event_type}")
-            
+                        
         except Exception as e:
             print(f"❌ WebSocket event handling error: {e}")
     
@@ -542,7 +547,7 @@ class LiveEdge5RAVFTrader:
                 
                 # Track the complete order plan
                 self.active_orders[order_ref] = {
-                    'side': side,
+                                'side': side,
                     'risk_sizing': '25% of balance @ 25x leverage',
                     'order_type': 'LIMIT',
                     'price': entry_price,
@@ -565,7 +570,7 @@ class LiveEdge5RAVFTrader:
             else:
                 print(f"❌ Entry order creation failed: {response.status_code} - {response.text}")
                 return None
-            
+                
         except Exception as e:
             print(f"❌ Entry order creation error: {e}")
             return None
@@ -642,7 +647,7 @@ class LiveEdge5RAVFTrader:
                     'trigger_type': trigger_type,
                     'trigger_price': trigger_price,
                     'order_side': order_side,
-                    'quantity': quantity,
+                            'quantity': quantity,
                     'order_type': order_type,
                     'price': price,
                     'status': 'ACTIVE'
@@ -724,11 +729,11 @@ class LiveEdge5RAVFTrader:
             else:
                 print(f"❌ Order cancellation failed: {response.status_code}")
                 return False
-            
+                
         except Exception as e:
             print(f"❌ Order cancellation error: {e}")
             return False
-    
+            
     def cancel_trigger_order(self, trigger_ref):
         """Cancel trigger order via COM API"""
         timestamp = int(time.time())
@@ -753,11 +758,11 @@ class LiveEdge5RAVFTrader:
             else:
                 print(f"❌ Trigger order cancellation failed: {response.status_code}")
                 return False
-                
+            
         except Exception as e:
             print(f"❌ Trigger order cancellation error: {e}")
             return False
-    
+            
     def get_positions(self):
         """Get current positions via COM API"""
         timestamp = int(time.time())
@@ -818,7 +823,7 @@ class LiveEdge5RAVFTrader:
         except Exception as e:
             print(f"❌ Position close error: {e}")
             return False
-            
+    
     def _calculate_atr(self, df, window=14):
         """Calculate Average True Range"""
         df['tr'] = np.maximum(
@@ -849,36 +854,6 @@ class LiveEdge5RAVFTrader:
         df['zvol'] = df['volume'] / df['volume'].rolling(window=lookback).mean()
         return df['zvol']
     
-    def _calculate_atr_safe(self, df, window=14):
-        """Calculate ATR - EXACT match to backtester"""
-        df['tr'] = np.maximum(
-            df['high'] - df['low'],
-            np.maximum(
-                np.abs(df['high'] - df['close'].shift(1)),
-                np.abs(df['low'] - df['close'].shift(1))
-            )
-        )
-        df['atr'] = df['tr'].rolling(window=window).mean()
-        return df['atr']
-    
-    def _calculate_clv_safe(self, df):
-        """Calculate CLV - EXACT match to backtester"""
-        df['clv'] = ((df['close'] - df['low']) - (df['high'] - df['close'])) / (df['high'] - df['low'])
-        df['clv'] = df['clv'].clip(-1, 1)
-        return df['clv']
-    
-    def _calculate_vwap_safe(self, df, window=48):
-        """Calculate VWAP - EXACT match to backtester"""
-        volume_price = df['close'] * df['volume']
-        rolling_vwap = volume_price.rolling(window=window).sum() / df['volume'].rolling(window=window).sum()
-        df['vwap'] = rolling_vwap
-        return df['vwap']
-    
-    def _calculate_relative_volume_safe(self, df, lookback=48):
-        """Calculate relative volume - EXACT match to backtester"""
-        # Use the exact same calculation as backtester
-        df['zvol'] = df['volume'] / df['volume'].rolling(window=lookback).mean()
-        return df['zvol']
     
     def _calculate_returns(self, df):
         """Calculate log returns - matches backtester"""
@@ -1355,7 +1330,7 @@ class LiveEdge5RAVFTrader:
         if not self.position or not self.position_ref:
             print(f"❌ Cannot execute entropy exit: No position or position_ref")
             return
-        
+            
         print(f"🔥 ENTROPY EXIT: {exit_reason} - Strategy detected locally, sending market close order to COM")
         
         # Send market close order to COM for immediate execution
@@ -1462,246 +1437,391 @@ class LiveEdge5RAVFTrader:
         if exit_reason == '5-Bar Time Stop':
             self.daily_time_stops += 1
     
+    def _load_data_like_backtester(self, file_path):
+        """Load data using EXACT same method as backtester"""
+        try:
+            # Check if this is the live data format (datadoge.csv)
+            if file_path.endswith("datadoge.csv"):
+                # Live data format: Timestamp,DateTime,Open,High,Low,Close,Volume
+                df = pd.read_csv(file_path)
+                
+                # Rename columns to match expected format
+                df = df.rename(columns={
+                    'Timestamp': 'timestamp',
+                    'DateTime': 'datetime',
+                    'Open': 'open',
+                    'High': 'high',
+                    'Low': 'low',
+                    'Close': 'close',
+                    'Volume': 'volume'
+                })
+                
+                # Convert timestamp from milliseconds to datetime
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                
+            else:
+                # Historical data format: timestamp, open, high, low, close, volume, vwap, trades, buy_volume, buy_value
+                df = pd.read_csv(file_path, header=None)
+                df.columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'vwap', 'trades', 'buy_volume', 'buy_value']
+                
+                # Convert timestamp from nanoseconds to datetime
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ns')
+            
+            # Ensure we have the required columns
+            required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            
+            if missing_cols:
+                print(f"❌ Missing columns: {missing_cols}")
+                return None
+            
+            print(f"✅ Data loaded: {len(df)} candles from {df['timestamp'].min()} to {df['timestamp'].max()}")
+            return df
+            
+        except Exception as e:
+            print(f"❌ Error loading data: {e}")
+            return None
+    
+    def _calculate_indicators_like_backtester(self, df):
+        """Calculate indicators using EXACT same method as backtester"""
+        print("📊 Calculating indicators (backtester method)...")
+        
+        # Basic calculations - EXACT same order as backtester
+        df = self._calculate_returns_like_backtester(df)
+        df = self._calculate_realized_volatility_like_backtester(df)
+        df = self._calculate_skew_kurt_like_backtester(df)
+        df = self._calculate_atr_like_backtester(df)
+        df = self._calculate_clv_like_backtester(df)
+        df = self._calculate_vwap_like_backtester(df)
+        df = self._calculate_relative_volume_like_backtester(df)
+        df = self._calculate_entropy_like_backtester(df)
+        df = self._calculate_regime_like_backtester(df)
+        
+        print("✅ Indicators calculated (backtester method)")
+        return df
+    
+    def _calculate_returns_like_backtester(self, df):
+        """Calculate log returns - EXACT match to backtester"""
+        df['returns'] = np.log(df['close'] / df['close'].shift(1))
+        return df
+    
+    def _calculate_realized_volatility_like_backtester(self, df, window=48):
+        """Calculate rolling realized volatility - EXACT match to backtester"""
+        df['rv'] = df['returns'].rolling(window=window).std()
+        return df
+    
+    def _calculate_skew_kurt_like_backtester(self, df, window=48):
+        """Calculate rolling skewness and kurtosis - EXACT match to backtester"""
+        df['skew'] = df['returns'].rolling(window=window).skew()
+        df['kurt'] = df['returns'].rolling(window=window).kurt()
+        return df
+    
+    def _calculate_atr_like_backtester(self, df, window=14):
+        """Calculate Average True Range - EXACT match to backtester"""
+        df['tr'] = np.maximum(
+            df['high'] - df['low'],
+            np.maximum(
+                np.abs(df['high'] - df['close'].shift(1)),
+                np.abs(df['low'] - df['close'].shift(1))
+            )
+        )
+        df['atr'] = df['tr'].rolling(window=window).mean()
+        return df
+            
+    def _calculate_clv_like_backtester(self, df):
+        """Calculate Close Location Value - EXACT match to backtester"""
+        df['clv'] = ((df['close'] - df['low']) - (df['high'] - df['close'])) / (df['high'] - df['low'])
+        df['clv'] = df['clv'].clip(-1, 1)
+        return df
+    
+    def _calculate_vwap_like_backtester(self, df, window=48):
+        """Calculate rolling VWAP - EXACT match to backtester"""
+        volume_price = df['close'] * df['volume']
+        rolling_vwap = volume_price.rolling(window=window).sum() / df['volume'].rolling(window=window).sum()
+        df['vwap'] = rolling_vwap
+        return df
+    
+    def _calculate_relative_volume_like_backtester(self, df, lookback=48):
+        """Calculate relative volume - EXACT match to backtester"""
+        df['zvol'] = df['volume'] / df['volume'].rolling(window=lookback).mean()
+        return df
+    
+    def _calculate_entropy_like_backtester(self, df, window=20):
+        """Calculate entropy - EXACT match to backtester"""
+        def entropy_calc(returns):
+            if len(returns) < 2:
+                return 0.0
+            returns = returns.dropna()
+            if len(returns) < 2:
+                return 0.0
+            try:
+                # Calculate entropy as -sum(p * log(p)) where p is normalized returns
+                abs_returns = np.abs(returns)
+                if abs_returns.sum() == 0:
+                    return 0.0
+                p = abs_returns / abs_returns.sum()
+                p = p[p > 0]  # Remove zeros
+                return -np.sum(p * np.log(p + 1e-10))
+            except:
+                return 0.0
+        
+        df['entropy'] = df['returns'].rolling(window=window).apply(entropy_calc, raw=False)
+        return df
+            
+    def _calculate_regime_like_backtester(self, df):
+        """Calculate regime - EXACT match to backtester"""
+        # For now, set all to Mean-reversion (as per live strategy focus)
+        df['regime'] = 'Mean-reversion'
+        return df
+    
+    def _save_indicators_to_csv(self, current):
+        """Save current candle indicators to CSV for analysis (append mode)"""
+        try:
+            import csv
+            
+            # Prepare indicator data
+            indicator_data = {
+                'timestamp': current['timestamp'],
+                'datetime': current['timestamp'].strftime('%Y-%m-%d %H:%M:%S'),
+                'open': self._get_safe_numeric(current, 'open'),
+                'high': self._get_safe_numeric(current, 'high'),
+                'low': self._get_safe_numeric(current, 'low'),
+                'close': self._get_safe_numeric(current, 'close'),
+                'volume': self._get_safe_numeric(current, 'volume'),
+                'atr': self._get_safe_numeric(current, 'atr'),
+                'vwap': self._get_safe_numeric(current, 'vwap'),
+                'clv': self._get_safe_numeric(current, 'clv'),
+                'zvol': self._get_safe_numeric(current, 'zvol'),
+                'entropy': self._get_safe_numeric(current, 'entropy'),
+                'regime': current.get('regime', 'Mean-reversion'),
+                'returns': current.get('returns', np.nan)
+            }
+            
+            # Add calculated analysis fields
+            close_price = indicator_data['close']
+            vwap = indicator_data['vwap']
+            atr = indicator_data['atr']
+            clv = indicator_data['clv']
+            zvol = indicator_data['zvol']
+            
+            # VWAP bands
+            indicator_data['vwap_upper'] = vwap + (self.VWAP_ATR_MULTIPLIER * atr)
+            indicator_data['vwap_lower'] = vwap - (self.VWAP_ATR_MULTIPLIER * atr)
+            indicator_data['price_vs_vwap_pct'] = ((close_price - vwap) / vwap) * 100
+            
+            # Signal analysis
+            indicator_data['long_vwap_ok'] = close_price <= indicator_data['vwap_lower']
+            indicator_data['short_vwap_ok'] = close_price >= indicator_data['vwap_upper']
+            indicator_data['long_clv_ok'] = clv <= self.CLV_LONG_THRESHOLD
+            indicator_data['short_clv_ok'] = clv >= self.CLV_SHORT_THRESHOLD
+            indicator_data['volume_ok'] = not pd.isna(zvol) and zvol >= self.VOLUME_THRESHOLD
+            
+            # Signal flags
+            indicator_data['long_signal'] = (
+                indicator_data['long_vwap_ok'] and 
+                indicator_data['long_clv_ok'] and 
+                indicator_data['volume_ok']
+            )
+            indicator_data['short_signal'] = (
+                indicator_data['short_vwap_ok'] and 
+                indicator_data['short_clv_ok'] and 
+                indicator_data['volume_ok']
+            )
+            
+            # Position tracking
+            indicator_data['position_open'] = self.is_position_open()
+            if self.position:
+                indicator_data['position_direction'] = 'LONG' if self.position['direction'] == 1 else 'SHORT'
+                indicator_data['position_bars_held'] = self.position['bars_held']
+                indicator_data['position_mfe'] = self.position['mfe_history'][-1] * 100 if self.position['mfe_history'] else 0
+                indicator_data['position_mfa'] = self.position['mfa_history'][-1] * 100 if self.position['mfa_history'] else 0
+            else:
+                indicator_data['position_direction'] = 'NONE'
+                indicator_data['position_bars_held'] = 0
+                indicator_data['position_mfe'] = 0
+                indicator_data['position_mfa'] = 0
+            
+            # Write to CSV
+            file_exists = os.path.exists(self.indicators_csv_filename)
+            
+            with open(self.indicators_csv_filename, 'a', newline='', encoding='utf-8') as csvfile:
+                fieldnames = list(indicator_data.keys())
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                
+                # Write header if file is new
+                if not file_exists or not self.indicators_csv_initialized:
+                    writer.writeheader()
+                    self.indicators_csv_initialized = True
+                
+                # Write data
+                writer.writerow(indicator_data)
+            
+            # Print periodic status (every 10 candles)
+            if len(self.candles) % 10 == 0:
+                print(f"💾 Indicators logged to CSV (candle {len(self.candles)})")
+            
+        except Exception as e:
+            print(f"❌ Error saving indicators to CSV: {e}")
+    
+    def _save_all_historical_candles(self, df):
+        """Save all historical candles with indicators to CSV for analysis"""
+        try:
+            import csv
+            
+            # Create CSV file with all historical data
+            csv_filename = 'live_indicators_log.csv'
+            
+            with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+                fieldnames = [
+                    'timestamp', 'datetime', 'open', 'high', 'low', 'close', 'volume',
+                    'atr', 'vwap', 'clv', 'zvol', 'entropy', 'regime', 'returns',
+                    'vwap_upper', 'vwap_lower', 'long_signal', 'short_signal', 'signal_strength'
+                ]
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                
+                for _, row in df.iterrows():
+                    # Prepare indicator data
+                    indicator_data = {
+                        'timestamp': row['timestamp'],
+                        'datetime': row['timestamp'].strftime('%Y-%m-%d %H:%M:%S'),
+                        'open': row['open'],
+                        'high': row['high'],
+                        'low': row['low'],
+                        'close': row['close'],
+                        'volume': row['volume'],
+                        'atr': row['atr'],
+                        'vwap': row['vwap'],
+                        'clv': row['clv'],
+                        'zvol': row['zvol'],
+                        'entropy': row['entropy'],
+                        'regime': row['regime'],
+                        'returns': row['returns']
+                    }
+                    
+                    # Add calculated analysis fields
+                    close_price = indicator_data['close']
+                    vwap = indicator_data['vwap']
+                    atr = indicator_data['atr']
+                    clv = indicator_data['clv']
+                    zvol = indicator_data['zvol']
+                    
+                    # VWAP bands
+                    vwap_upper = vwap + (0.6 * atr)
+                    vwap_lower = vwap - (0.6 * atr)
+                    
+                    # Signal analysis
+                    long_signal = (close_price <= vwap_lower and clv <= -0.4 and zvol >= 1.2)
+                    short_signal = (close_price >= vwap_upper and clv >= 0.4 and zvol >= 1.2)
+                    
+                    # Signal strength
+                    signal_strength = 0
+                    if long_signal:
+                        signal_strength = 1
+                    elif short_signal:
+                        signal_strength = -1
+                    
+                    # Add analysis fields
+                    indicator_data.update({
+                        'vwap_upper': vwap_upper,
+                        'vwap_lower': vwap_lower,
+                        'long_signal': long_signal,
+                        'short_signal': short_signal,
+                        'signal_strength': signal_strength
+                    })
+                    
+                    writer.writerow(indicator_data)
+            
+            print(f"💾 Saved {len(df)} historical candles to {csv_filename}")
+            
+        except Exception as e:
+            print(f"❌ Error saving historical candles to CSV: {e}")
+    
     def process_new_candle(self, candle_data):
-        """Process new 5-minute candle data"""
+        """Process new 5-minute candle data by recalculating all indicators (live trader method)"""
         try:
             # Validate input data
             if len(candle_data) < 7:
                 print(f"❌ Invalid candle data: expected 7 columns, got {len(candle_data)}")
                 return
                 
-            # Convert candle data to DataFrame format
-            df = pd.DataFrame([candle_data], columns=[
-                'timestamp', 'datetime', 'open', 'high', 'low', 'close', 'volume'
-            ])
+            # Parse candle data
+            timestamp = int(candle_data[0])
+            open_price = float(candle_data[2])
+            high_price = float(candle_data[3])
+            low_price = float(candle_data[4])
+            close_price = float(candle_data[5])
+            volume = float(candle_data[6])
             
-            # Convert timestamp with error handling
-            try:
-                df['timestamp'] = pd.to_datetime(df['datetime'])
-                df['date'] = df['timestamp'].dt.date
-            except Exception as e:
-                print(f"❌ Timestamp conversion error: {e}")
-                print(f"🔍 Raw datetime value: {candle_data[1]}")
-                return
+            # Convert timestamp to datetime
+            current_timestamp = pd.to_datetime(timestamp, unit='ms')
             
-            # Convert numeric data to float
-            try:
-                df['open'] = pd.to_numeric(df['open'], errors='coerce')
-                df['high'] = pd.to_numeric(df['high'], errors='coerce')
-                df['low'] = pd.to_numeric(df['low'], errors='coerce')
-                df['close'] = pd.to_numeric(df['close'], errors='coerce')
-                df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
-                
-                # Check for any NaN values after conversion
-                if df[['open', 'high', 'low', 'close', 'volume']].isna().any().any():
-                    print(f"❌ Numeric conversion failed - NaN values detected")
-                    print(f"🔍 Raw values: O:{candle_data[2]}, H:{candle_data[3]}, L:{candle_data[4]}, C:{candle_data[5]}, V:{candle_data[6]}")
-                    return
-            
-            except Exception as e:
-                print(f"❌ Numeric conversion error: {e}")
-                print(f"🔍 Raw values: O:{candle_data[2]}, H:{candle_data[3]}, L:{candle_data[4]}, C:{candle_data[5]}, V:{candle_data[6]}")
-                return
-                
-            # Debug: Check data conversion
-            print(f"🔍 Debug: Raw datetime: {candle_data[1]}, Converted timestamp: {df['timestamp'].iloc[0]}, Type: {type(df['timestamp'].iloc[0])}")
-            print(f"🔍 Debug: OHLC types - O:{type(df['open'].iloc[0])}, H:{type(df['high'].iloc[0])}, L:{type(df['low'].iloc[0])}, C:{type(df['close'].iloc[0])}, V:{type(df['volume'].iloc[0])}")
-            
-            # Calculate indicators in the same order as backtester
-            # First calculate returns (needs previous close)
-            df['returns'] = np.nan
-            if len(self.candles) > 0:
-                # Use previous close from stored candles
-                prev_close = self.candles[-1]['close']
-                df['returns'] = np.log(df['close'] / prev_close)
-            
-            # Calculate indicators using appropriate data sources
-            if len(self.candles) > 0:
-                # Create DataFrame from all historical candles for rolling indicators
-                hist_df = pd.DataFrame(self.candles)
-                print(f"🔍 Indicators Debug: Using {len(hist_df)} historical candles for rolling calculations")
-                print(f"🔍 Hist DF columns: {list(hist_df.columns)}")
-                print(f"🔍 Hist DF shape: {hist_df.shape}")
-                print(f"🔍 Sample data: {hist_df[['close', 'volume']].head()}")
-                
-                # Calculate rolling indicators on historical data
-                print(f"🔍 Before calculations - Hist DF types: close={hist_df['close'].dtype}, volume={hist_df['volume'].dtype}")
-                print(f"🔍 Before calculations - Sample close values: {hist_df['close'].head()}")
-                print(f"🔍 Before calculations - Sample volume values: {hist_df['volume'].head()}")
-                
-                hist_df['atr'] = self._calculate_atr_safe(hist_df)
-                print(f"🔍 ATR calculation result: {hist_df['atr'].tail()}")
-                
-                hist_df['vwap'] = self._calculate_vwap_safe(hist_df)
-                print(f"🔍 VWAP calculation result: {hist_df['vwap'].tail()}")
-                
-                hist_df['zvol'] = self._calculate_relative_volume_safe(hist_df)
-                print(f"🔍 zVol calculation result: {hist_df['zvol'].tail()}")
-                
-                # Calculate entropy using rolling window (matches backtester)
-                hist_df['close'] = pd.to_numeric(hist_df['close'], errors='coerce')
-                hist_df['returns'] = np.log(hist_df['close'] / hist_df['close'].shift(1))
-                
-                def entropy_calc(returns):
-                    if len(returns) < 2:
-                        return 0.0
-                    returns = returns.dropna()
-                    if len(returns) < 2:
-                        return 0.0
-                    try:
-                        abs_returns = np.abs(returns)
-                        if abs_returns.sum() == 0:
-                            return 0.0
-                        p = abs_returns / abs_returns.sum()
-                        p = p[p > 0]
-                        return -np.sum(p * np.log(p + 1e-10))
-                    except:
-                        return 0.0
-                
-                hist_df['entropy'] = hist_df['returns'].rolling(window=20).apply(entropy_calc, raw=False)
-                
-                # Get the latest values for current candle
-                df['atr'] = hist_df['atr'].iloc[-1] if len(hist_df) > 0 else 0.0
-                df['vwap'] = hist_df['vwap'].iloc[-1] if len(hist_df) > 0 else df['close'].iloc[0]
-                # For z-Volume, get the latest value directly (no complex NaN handling)
-                df['zvol'] = hist_df['zvol'].iloc[-1] if len(hist_df) > 0 else 1.0
-                
-                # If it's NaN, keep it as NaN - don't force fallback values
-                if pd.isna(df['zvol'].iloc[0]):
-                    df['zvol'] = np.nan
-                df['entropy'] = hist_df['entropy'].iloc[-1] if len(hist_df) > 0 and not pd.isna(hist_df['entropy'].iloc[-1]) else 0.0
-                
-                print(f"🔍 Rolling Values: ATR={df['atr'].iloc[0]:.6f}, VWAP={df['vwap'].iloc[0]:.6f}, zVol={df['zvol'].iloc[0]:.2f}, Entropy={df['entropy'].iloc[0]:.4f}")
-                print(f"🔍 Hist DF latest values: ATR={hist_df['atr'].iloc[-1]:.6f}, VWAP={hist_df['vwap'].iloc[-1]:.6f}, zVol={hist_df['zvol'].iloc[-1]:.2f}, Entropy={hist_df['entropy'].iloc[-1]:.4f}")
-            else:
-                # Fallback to current candle only
-                df['atr'] = self._calculate_atr_safe(df)
-                df['vwap'] = df['close'].iloc[0]
-                df['zvol'] = 1.0
-                df['entropy'] = 0.0
-                print(f"🔍 No historical data, using current candle values only")
-            
-            # Calculate CLV on current candle only (single-candle indicator)
-            df['clv'] = self._calculate_clv_safe(df)
-            print(f"🔍 Current CLV: {df['clv'].iloc[0]:.4f} (O:{df['open'].iloc[0]:.6f} H:{df['high'].iloc[0]:.6f} L:{df['low'].iloc[0]:.6f} C:{df['close'].iloc[0]:.6f})")
-            
-            # Calculate additional indicators like backtester
-            df['rv'] = np.nan
-            df['skew'] = np.nan
-            df['kurt'] = np.nan
-            
-            # For now, set regime to Mean-reversion (as per live strategy focus)
-            df['regime'] = 'Mean-reversion'
-            
-            current = df.iloc[0]
-            
-            # Store candle data for historical analysis
-            candle_data = {
-                'timestamp': current['timestamp'],
-                'open': self._get_safe_numeric(current, 'open'),
-                'high': self._get_safe_numeric(current, 'high'),
-                'low': self._get_safe_numeric(current, 'low'),
-                'close': self._get_safe_numeric(current, 'close'),
-                'volume': self._get_safe_numeric(current, 'volume'),
-                'vwap': self._get_safe_numeric(current, 'vwap'),
-                'atr': self._get_safe_numeric(current, 'atr'),
-                'clv': self._get_safe_numeric(current, 'clv'),
-                'zvol': self._get_safe_numeric(current, 'zvol'),
-                'entropy': self._get_safe_numeric(current, 'entropy')
+            # Add new candle to our historical buffer
+            new_candle = {
+                'timestamp': current_timestamp,
+                'open': open_price,
+                'high': high_price,
+                'low': low_price,
+                'close': close_price,
+                'volume': volume
             }
-            self.candles.append(candle_data)
+            self.candles.append(new_candle)
             
-            # Keep only last 100 candles to prevent memory issues
-            if len(self.candles) > 100:
-                self.candles = self.candles[-100:]
+            # Keep only last 200 candles to prevent memory issues (need more for rolling calculations)
+            if len(self.candles) > 200:
+                self.candles = self.candles[-200:]
             
-            # Ensure current timestamp is a proper datetime object
-            current_timestamp = self._get_safe_timestamp(current)
+            # Recalculate ALL indicators using the updated dataset (including new candle)
+            # This ensures we use the EXACT same method as backtester
+            df = pd.DataFrame(self.candles)
+            df = self._calculate_indicators_like_backtester(df)
             
-            print(f"\n🕒 New Candle: {current_timestamp.strftime('%H:%M:%S')} | "
-                  f"O:{self._get_safe_numeric(current, 'open'):.6f} H:{self._get_safe_numeric(current, 'high'):.6f} L:{self._get_safe_numeric(current, 'low'):.6f} "
-                  f"C:{self._get_safe_numeric(current, 'close'):.6f} V:{self._get_safe_numeric(current, 'volume'):.2f}")
+            # Get the latest calculated values (for the new candle)
+            latest_row = df.iloc[-1]
+            
+            # Create current data with freshly calculated indicators
+            current = {
+                'timestamp': current_timestamp,
+                'open': open_price,
+                'high': high_price,
+                'low': low_price,
+                'close': close_price,
+                'volume': volume,
+                'atr': latest_row['atr'],
+                'vwap': latest_row['vwap'],
+                'clv': latest_row['clv'],
+                'zvol': latest_row['zvol'],
+                'entropy': latest_row['entropy'],
+                'regime': latest_row['regime'],
+                'returns': latest_row['returns']
+            }
+            
+            print(f"🔍 Live trader - Freshly calculated indicators:")
+            print(f"   ATR: {current['atr']:.6f}")
+            print(f"   VWAP: {current['vwap']:.6f}")
+            print(f"   CLV: {current['clv']:.4f}")
+            print(f"   zVol: {current['zvol']:.2f}")
+            print(f"   Entropy: {current['entropy']:.4f}")
             
             # Print detailed debug information
             self._print_debug_info(current)
             
+            # Save indicators to CSV for analysis
+            self._save_indicators_to_csv(current)
+            
             # Check for new signal if not in position
-            if not self.is_position_open():
-                # Check daily guardrails
-                if self._should_skip_signal(current):
-                    print("⏸️ Skipping signal due to daily guardrails")
-                    return
-            
-                # Check for mean reversion entry signals
+            if not self.position:
                 signal = self._check_entry_signal(current)
-                
                 if signal:
-                    signal_type, direction = signal
-                    print(f"🎯 ENTRY SIGNAL: {signal_type} - {direction}")
-                    
-                    # Create position
-                    self.position = self._create_position(current, signal_type, direction)
-                    
-                    # Create entry order with COMPLETE exit plan managed by COM
-                    side = "BUY" if direction == 1 else "SELL"
-                    order_ref = self.create_entry_order_with_exit_plan(
-                        side=side,
-                        entry_price=self._get_safe_numeric(current, 'close'),
-                        tp1_price=self.position['tp1'],
-                        tp2_price=self.position['tp2'],
-                        stop_loss_price=self.position['stop_loss']
-                    )
-                    
-                    if order_ref:
-                        self.position['order_refs'].append(order_ref)
-                        # Store position reference for future COM updates
-                        if hasattr(self, 'position_ref') and self.position_ref:
-                            self.position['position_ref'] = self.position_ref
-                        # Ensure last_signal_time is a proper datetime
-                        self.last_signal_time = current_timestamp
-                        print(f"🚀 Entry order with complete exit plan created!")
-                        print(f"📊 COM will automatically manage all exits:")
-                        print(f"   - TP1: 60% scale-out at {self.position['tp1']} (POST-ONLY LIMIT)")
-                        print(f"   - TP2: 40% runner at {self.position['tp2']} (POST-ONLY LIMIT)")
-                        print(f"   - Stop Loss: {self.position['stop_loss']} (MARKET)")
-                        print(f"   - Catastrophic Stop: {self.position['entry_price'] * (0.9910 if direction == 1 else 1.0090)} (MARKET)")
-                        print(f"   - After TP1: Stop loss moves to breakeven automatically")
-                    else:
-                        print("❌ Failed to create entry order with exit plan")
-                        self.position = None
-            
-            # Update position if exists
-            if self.is_position_open():
-                # Check if position is still open based on WebSocket updates
-                if self.position_status and self.position_status.get('size', 0) == 0:
-                    print("🔚 Position closed by COM - updating local state")
-                    self.position = None
-                    self.position_ref = None
-                    self.position_status = None
-                    return
-            
-                # Update position tracking
-                self._update_position_tracking(self.position, current)
-                
-                # Increment bars held
-                self.position['bars_held'] += 1
-                
-                print(f"📊 Position: {self.position['bars_held']} bars held, "
-                      f"MFE: {self.position['mfe_history'][-1]*100:.3f}%, "
-                      f"MFA: {self.position['mfa_history'][-1]*100:.3f}%")
-                
-                # Check exit conditions (only for locally monitored exits)
-                exit_reason = self._check_exit_conditions(current, self.position)
-                
-                if exit_reason:
-                    self._execute_exit(exit_reason, current)
-            
-            # Update equity curve
-            self.equity_curve.append(self.current_equity)
+                    self._handle_entry_signal(signal, current)
+            else:
+                # Check for exit conditions
+                self._check_exit_conditions(current)
             
         except Exception as e:
             print(f"❌ Error processing candle: {e}")
             import traceback
+            traceback.print_exc()
             traceback.print_exc()
     
     def is_position_open(self):
@@ -1728,7 +1848,7 @@ class LiveEdge5RAVFTrader:
         
         # Skip signal generation if z-Volume is NaN (insufficient data)
         if pd.isna(zvol):
-            return None
+                return None
             
         # MEAN-REVERSION AVWAP SNAPBACK LONG
         if (current['regime'] == 'Mean-reversion' and
@@ -1747,174 +1867,59 @@ class LiveEdge5RAVFTrader:
             return 'MeanRev_Short', -1
             
     def load_historical_data(self):
-        """Load historical data from CSV file at startup"""
+        """Load historical data using EXACT same method as backtester"""
         if not os.path.exists(CSV_FILENAME):
             print(f"❌ CSV file not found: {CSV_FILENAME}")
             return False
         
         try:
-            print(f"📊 Loading historical data from {CSV_FILENAME}...")
-            with open(CSV_FILENAME, 'r') as f:
-                lines = f.readlines()
+            print(f"📊 Loading historical data from {CSV_FILENAME} (backtester method)...")
             
-            # Skip header if present
-            start_line = 1 if lines[0].strip().startswith('timestamp') else 0
+            # Load the SAME data as backtester using identical method
+            df = self._load_data_like_backtester(CSV_FILENAME)
             
-            # Load the last 150 candles to ensure all indicators have enough data
-            # VWAP needs 48, Entropy needs 20, ATR needs 14, so 150 should be plenty
-            total_lines = len(lines) - start_line
-            if total_lines > 150:
-                # Start from the end and work backwards
-                start_index = len(lines) - 150
-            else:
-                start_index = start_line
+            if df is None or len(df) == 0:
+                print("❌ Failed to load historical data")
+                self.candles = []
+                return False
             
-            loaded_count = 0
-            for i in range(start_index, len(lines)):
-                try:
-                    # Parse CSV line
-                    parts = lines[i].strip().split(',')
-                    if len(parts) >= 7:
-                        # Load historical data WITHOUT triggering signals or trades
-                        self.load_historical_candle(parts)
-                        loaded_count += 1
-                except Exception as e:
-                    print(f"❌ Error processing line {i+1}: {e}")
-                    continue
+            print(f"📊 Loaded {len(df)} candles (same as backtester)")
             
-            print(f"✅ Loaded {loaded_count} historical candles (last 100 from CSV)")
-            return loaded_count > 0
+            # Calculate indicators using EXACT same method as backtester
+            df = self._calculate_indicators_like_backtester(df)
+            
+            # Convert to candle format for live processing
+            self.candles = []
+            for _, row in df.iterrows():
+                candle_data = {
+                    'timestamp': row['timestamp'],
+                    'open': row['open'],
+                    'high': row['high'],
+                    'low': row['low'],
+                    'close': row['close'],
+                    'volume': row['volume'],
+                    'atr': row['atr'],
+                    'vwap': row['vwap'],
+                    'clv': row['clv'],
+                    'zvol': row['zvol'],
+                    'entropy': row['entropy'],
+                    'regime': row['regime'],
+                    'returns': row['returns']
+                }
+                self.candles.append(candle_data)
+            
+            print(f"✅ Loaded {len(self.candles)} historical candles with pre-calculated indicators (backtester method)")
+            
+            # Save ALL historical candles to CSV for analysis
+            self._save_all_historical_candles(df)
+            
+            return len(self.candles) > 0
             
         except Exception as e:
             print(f"❌ Error loading historical data: {e}")
+            self.candles = []
             return False
     
-    def load_historical_candle(self, candle_data):
-        """Load historical candle data for indicator calculations only (no trading logic)"""
-        try:
-            # Validate input data
-            if len(candle_data) < 7:
-                return
-            
-            # Convert candle data to DataFrame format
-            df = pd.DataFrame([candle_data], columns=[
-                'timestamp', 'datetime', 'open', 'high', 'low', 'close', 'volume'
-            ])
-            
-            # Convert timestamp with error handling
-            try:
-                df['timestamp'] = pd.to_datetime(df['datetime'])
-                df['date'] = df['timestamp'].dt.date
-            except Exception as e:
-                return
-            
-            # Convert numeric data to float
-            try:
-                df['open'] = pd.to_numeric(df['open'], errors='coerce')
-                df['high'] = pd.to_numeric(df['high'], errors='coerce')
-                df['low'] = pd.to_numeric(df['low'], errors='coerce')
-                df['close'] = pd.to_numeric(df['close'], errors='coerce')
-                df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
-                
-                # Check for any NaN values after conversion
-                if df[['open', 'high', 'low', 'close', 'volume']].isna().any().any():
-                    return
-            except Exception as e:
-                return
-            
-            # Calculate indicators in the same order as backtester
-            # First calculate returns (needs previous close)
-            df['returns'] = np.nan
-            if len(self.candles) > 0:
-                # Use previous close from stored candles
-                prev_close = self.candles[-1]['close']
-                df['returns'] = np.log(df['close'] / prev_close)
-            
-            # Calculate indicators using appropriate data sources
-            if len(self.candles) > 0:
-                # Create DataFrame from all historical candles for rolling indicators
-                hist_df = pd.DataFrame(self.candles)
-                
-                # Calculate rolling indicators on historical data
-                hist_df['atr'] = self._calculate_atr_safe(hist_df)
-                hist_df['vwap'] = self._calculate_vwap_safe(hist_df)
-                hist_df['zvol'] = self._calculate_relative_volume_safe(hist_df)
-                
-                # Calculate entropy using rolling window (matches backtester)
-                hist_df['close'] = pd.to_numeric(hist_df['close'], errors='coerce')
-                hist_df['returns'] = np.log(hist_df['close'] / hist_df['close'].shift(1))
-                
-                def entropy_calc(returns):
-                    if len(returns) < 2:
-                        return 0.0
-                    returns = returns.dropna()
-                    if len(returns) < 2:
-                        return 0.0
-                    try:
-                        abs_returns = np.abs(returns)
-                        if abs_returns.sum() == 0:
-                            return 0.0
-                        p = abs_returns / abs_returns.sum()
-                        p = p[p > 0]
-                        return -np.sum(p * np.log(p + 1e-10))
-                    except:
-                        return 0.0
-                
-                hist_df['entropy'] = hist_df['returns'].rolling(window=20).apply(entropy_calc, raw=False)
-                
-                # Get the latest values for current candle
-                df['atr'] = hist_df['atr'].iloc[-1] if len(hist_df) > 0 else 0.0
-                df['vwap'] = hist_df['vwap'].iloc[-1] if len(hist_df) > 0 else df['close'].iloc[0]
-                # For z-Volume, get the latest value directly (no complex NaN handling)
-                df['zvol'] = hist_df['zvol'].iloc[-1] if len(hist_df) > 0 else 1.0
-                
-                # If it's NaN, keep it as NaN - don't force fallback values
-                if pd.isna(df['zvol'].iloc[0]):
-                    df['zvol'] = np.nan
-                df['entropy'] = hist_df['entropy'].iloc[-1] if len(hist_df) > 0 and not pd.isna(hist_df['entropy'].iloc[-1]) else 0.0
-            else:
-                # Fallback to current candle only
-                df['atr'] = self._calculate_atr_safe(df)
-                df['vwap'] = df['close'].iloc[0]
-                df['zvol'] = 1.0
-                df['entropy'] = 0.0
-            
-            # Calculate CLV on current candle only (single-candle indicator)
-            df['clv'] = self._calculate_clv_safe(df)
-            
-            # Calculate additional indicators like backtester
-            df['rv'] = np.nan
-            df['skew'] = np.nan
-            df['kurt'] = np.nan
-            
-            # For now, set regime to Mean-reversion (as per live strategy focus)
-            df['regime'] = 'Mean-reversion'
-            
-            current = df.iloc[0]
-            
-            # Store candle data for historical analysis (NO TRADING LOGIC)
-            candle_data = {
-                'timestamp': current['timestamp'],
-                'open': self._get_safe_numeric(current, 'open'),
-                'high': self._get_safe_numeric(current, 'high'),
-                'low': self._get_safe_numeric(current, 'low'),
-                'close': self._get_safe_numeric(current, 'close'),
-                'volume': self._get_safe_numeric(current, 'volume'),
-                'vwap': self._get_safe_numeric(current, 'vwap'),
-                'atr': self._get_safe_numeric(current, 'atr'),
-                'clv': self._get_safe_numeric(current, 'clv'),
-                'zvol': self._get_safe_numeric(current, 'zvol'),
-                'entropy': self._get_safe_numeric(current, 'entropy')
-            }
-            self.candles.append(candle_data)
-            
-            # Keep only last 100 candles to prevent memory issues
-            if len(self.candles) > 100:
-                self.candles = self.candles[-100:]
-            
-        except Exception as e:
-            # Silently skip problematic candles during historical loading
-            pass
 
     def monitor_csv_file(self):
         """Monitor CSV file for new candles"""
@@ -1927,6 +1932,7 @@ class LiveEdge5RAVFTrader:
         last_modified = 0
         last_line_count = 0
         file_waiting = True
+        consecutive_missing = 0
         
         while True:
             try:
@@ -1935,6 +1941,10 @@ class LiveEdge5RAVFTrader:
                     if file_waiting:
                         print(f"✅ CSV file found: {CSV_FILENAME}")
                         file_waiting = False
+                        consecutive_missing = 0
+                    elif consecutive_missing > 0:
+                        # File was missing but now found again
+                        consecutive_missing = 0
                     
                     current_modified = os.path.getmtime(CSV_FILENAME)
                     
@@ -1957,11 +1967,16 @@ class LiveEdge5RAVFTrader:
                         last_modified = current_modified
                 else:
                     # File doesn't exist
-                    if not file_waiting:
-                        print(f"⚠️ CSV file disappeared: {CSV_FILENAME}")
+                    consecutive_missing += 1
+                    if not file_waiting and consecutive_missing >= 3:
+                        print(f"⚠️ CSV file disappeared: {CSV_FILENAME} (missing for {consecutive_missing} checks)")
                         file_waiting = True
                 
-                time.sleep(1)  # Check every second
+                # Adaptive sleep: shorter when file is being updated, longer when stable
+                if current_modified > last_modified:
+                    time.sleep(0.5)  # Check more frequently when file is updating
+                else:
+                    time.sleep(2)    # Check less frequently when file is stable
                 
             except KeyboardInterrupt:
                 print("\n🛑 Stopping CSV monitor...")
