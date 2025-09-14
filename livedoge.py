@@ -1037,20 +1037,43 @@ class LiveEdge5RAVFTrader:
         # Get safe timestamp
         current_timestamp = self._get_safe_timestamp(current)
         
+        print(f"🛡️ DAILY GUARDRAILS CHECK:")
+        print(f"   Current date: {current_timestamp.date()}")
+        print(f"   Last signal time: {self.last_signal_time}")
+        print(f"   Daily PnL: {self.daily_pnl:.4f}")
+        print(f"   Daily time stops: {self.daily_time_stops}")
+        
         # Reset daily tracking if new day
         if self.current_date != current_timestamp.date():
+            print(f"   New day detected - resetting daily tracking")
             self.daily_pnl = 0
             self.daily_time_stops = 0
         
         self.current_date = current_timestamp.date()
         
         # Check if we should stop taking signals
-        if self.daily_pnl <= -1.5 * 0.0085 or self.daily_time_stops >= 3:  # -1.5R or 3 time-stops
+        pnl_threshold = -1.5 * 0.0085
+        time_stop_threshold = 3
+        
+        print(f"   PnL threshold: {pnl_threshold:.4f} (current: {self.daily_pnl:.4f})")
+        print(f"   Time stop threshold: {time_stop_threshold} (current: {self.daily_time_stops})")
+        
+        if self.daily_pnl <= pnl_threshold or self.daily_time_stops >= time_stop_threshold:
+            print(f"   ⚠️ Daily limits hit - checking 6-hour cooldown")
             # Check if 6 hours have passed since last signal
             if self.last_signal_time and isinstance(self.last_signal_time, pd.Timestamp):
                 time_diff = (current_timestamp - self.last_signal_time).total_seconds()
+                hours_passed = time_diff / 3600
+                print(f"   Hours since last signal: {hours_passed:.2f}")
                 if time_diff < 6 * 3600:
+                    print(f"   ❌ Signal blocked - 6-hour cooldown active")
                     return True
+                else:
+                    print(f"   ✅ 6-hour cooldown passed - signals allowed")
+            else:
+                print(f"   ✅ No previous signal - signals allowed")
+        else:
+            print(f"   ✅ Daily limits OK - signals allowed")
         
         return False
     
@@ -1811,10 +1834,15 @@ class LiveEdge5RAVFTrader:
             
             # Check for new signal if not in position
             if not self.position:
+                print(f"🔍 Checking for entry signal (no position open)...")
                 signal = self._check_entry_signal(current)
                 if signal:
+                    print(f"🎯 Signal detected: {signal}")
                     self._handle_entry_signal(signal, current)
+                else:
+                    print(f"⏳ No signal generated")
             else:
+                print(f"📊 Position already open, checking exit conditions...")
                 # Check for exit conditions
                 self._check_exit_conditions(current)
             
@@ -1846,25 +1874,121 @@ class LiveEdge5RAVFTrader:
         clv = current['clv']
         zvol = current['zvol']
         
+        print(f"🔍 SIGNAL CHECK DEBUG:")
+        print(f"   Close: {close_price:.6f}")
+        print(f"   VWAP: {vwap:.6f}")
+        print(f"   ATR: {atr:.6f}")
+        print(f"   CLV: {clv:.4f}")
+        print(f"   zVol: {zvol:.2f}")
+        print(f"   Regime: {current['regime']}")
+        
         # Skip signal generation if z-Volume is NaN (insufficient data)
         if pd.isna(zvol):
-                return None
+            print(f"❌ zVol is NaN - skipping signal")
+            return None
+        
+        # Calculate VWAP bands
+        vwap_upper = vwap + self.VWAP_ATR_MULTIPLIER * atr
+        vwap_lower = vwap - self.VWAP_ATR_MULTIPLIER * atr
+        
+        print(f"   VWAP Upper: {vwap_upper:.6f}")
+        print(f"   VWAP Lower: {vwap_lower:.6f}")
+        
+        # Check LONG conditions
+        long_vwap_ok = close_price <= vwap_lower
+        long_clv_ok = clv <= self.CLV_LONG_THRESHOLD
+        long_volume_ok = zvol >= self.VOLUME_THRESHOLD
+        long_regime_ok = current['regime'] == 'Mean-reversion'
+        
+        print(f"   LONG CHECKS:")
+        print(f"     VWAP: {close_price:.6f} <= {vwap_lower:.6f} = {long_vwap_ok}")
+        print(f"     CLV: {clv:.4f} <= {self.CLV_LONG_THRESHOLD} = {long_clv_ok}")
+        print(f"     Volume: {zvol:.2f} >= {self.VOLUME_THRESHOLD} = {long_volume_ok}")
+        print(f"     Regime: {current['regime']} == 'Mean-reversion' = {long_regime_ok}")
+        
+        # Check SHORT conditions
+        short_vwap_ok = close_price >= vwap_upper
+        short_clv_ok = clv >= self.CLV_SHORT_THRESHOLD
+        short_volume_ok = zvol >= self.VOLUME_THRESHOLD
+        short_regime_ok = current['regime'] == 'Mean-reversion'
+        
+        print(f"   SHORT CHECKS:")
+        print(f"     VWAP: {close_price:.6f} >= {vwap_upper:.6f} = {short_vwap_ok}")
+        print(f"     CLV: {clv:.4f} >= {self.CLV_SHORT_THRESHOLD} = {short_clv_ok}")
+        print(f"     Volume: {zvol:.2f} >= {self.VOLUME_THRESHOLD} = {short_volume_ok}")
+        print(f"     Regime: {current['regime']} == 'Mean-reversion' = {short_regime_ok}")
             
         # MEAN-REVERSION AVWAP SNAPBACK LONG
-        if (current['regime'] == 'Mean-reversion' and
-            close_price <= vwap - self.VWAP_ATR_MULTIPLIER * atr and
-            clv <= self.CLV_LONG_THRESHOLD and
-            zvol >= self.VOLUME_THRESHOLD):
-            
+        if (long_regime_ok and long_vwap_ok and long_clv_ok and long_volume_ok):
+            print(f"✅ LONG SIGNAL TRIGGERED!")
             return 'MeanRev_Long', 1
         
         # MEAN-REVERSION AVWAP SNAPBACK SHORT
-        elif (current['regime'] == 'Mean-reversion' and
-              close_price >= vwap + self.VWAP_ATR_MULTIPLIER * atr and
-              clv >= self.CLV_SHORT_THRESHOLD and
-              zvol >= self.VOLUME_THRESHOLD):
-            
+        elif (short_regime_ok and short_vwap_ok and short_clv_ok and short_volume_ok):
+            print(f"✅ SHORT SIGNAL TRIGGERED!")
             return 'MeanRev_Short', -1
+        else:
+            print(f"❌ No signal - conditions not met")
+            return None
+    
+    def _handle_entry_signal(self, signal, current):
+        """Handle entry signal by creating position and sending order to COM"""
+        try:
+            signal_type, direction = signal
+            close_price = self._get_safe_numeric(current, 'close')
+            
+            print(f"🎯 SIGNAL DETECTED: {signal_type} at {close_price:.6f}")
+            
+            # Check daily guardrails
+            if self._should_skip_signal(current):
+                print("⏸️ Signal skipped due to daily guardrails")
+                return
+            
+            # Create position object
+            self.position = self._create_position(current, signal_type, direction)
+            
+            # Calculate TP/SL prices
+            if direction == 1:  # Long
+                tp1_price = close_price * 1.0050  # +0.50%
+                tp2_price = close_price * 1.0095  # +0.95%
+                stop_loss_price = close_price * 0.9920  # -0.80%
+                order_side = "BUY"
+            else:  # Short
+                tp1_price = close_price * 0.9945  # -0.55%
+                tp2_price = close_price * 0.9900  # -1.00%
+                stop_loss_price = close_price * 1.0080  # +0.80%
+                order_side = "SELL"
+            
+            print(f"📊 Order Details:")
+            print(f"   Side: {order_side}")
+            print(f"   Entry: {close_price:.6f}")
+            print(f"   TP1: {tp1_price:.6f} (60% scale-out)")
+            print(f"   TP2: {tp2_price:.6f} (40% runner)")
+            print(f"   SL: {stop_loss_price:.6f}")
+            
+            # Send order to COM with complete exit plan
+            order_ref = self.create_entry_order_with_exit_plan(
+                side=order_side,
+                entry_price=close_price,
+                tp1_price=tp1_price,
+                tp2_price=tp2_price,
+                stop_loss_price=stop_loss_price
+            )
+            
+            if order_ref:
+                print(f"✅ Order sent to COM: {order_ref}")
+                self.position['order_refs'] = [order_ref]
+                self.last_signal_time = current['timestamp']
+                print(f"🚀 Position created: {signal_type} - COM will manage full exit plan")
+            else:
+                print(f"❌ Order creation failed - clearing position")
+                self.position = None
+                
+        except Exception as e:
+            print(f"❌ Error handling entry signal: {e}")
+            import traceback
+            traceback.print_exc()
+            self.position = None
             
     def load_historical_data(self):
         """Load historical data using EXACT same method as backtester"""
