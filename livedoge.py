@@ -402,11 +402,10 @@ class LiveEdge5RAVFTrader:
                     "symbol": SYMBOL
                 },
                 "side": side,
-                "order_type": "LIMIT",
-                "price": entry_price,
+                "order_type": "MARKET",
                 "time_in_force": "GTC",
                 "flags": {
-                    "post_only": True,
+                    "post_only": False,
                     "reduce_only": False,
                     "hidden": False,
                     "iceberg": {},
@@ -421,9 +420,6 @@ class LiveEdge5RAVFTrader:
                     "sizing": {
                         "mode": "PCT_BALANCE",
                         "value": 25.0,
-                        "cap": {
-                            "notional": 10000.0
-                        },
                         "floor": {
                             "notional": 10.0
                         }
@@ -502,23 +498,6 @@ class LiveEdge5RAVFTrader:
                                 "order_type": "MARKET",
                                 "time_in_force": "GTC"
                             }
-                        },
-                        {
-                            "kind": "SL",
-                            "label": "Catastrophic Stop",
-                            "allocation": {
-                                "type": "percentage",
-                                "value": 100.0
-                            },
-                            "trigger": {
-                                "mode": "PRICE",
-                                "price_type": "MARK",
-                                "value": entry_price * (0.9910 if side == "BUY" else 1.0090)  # -0.90% or +0.90%
-                            },
-                            "exec": {
-                                "order_type": "MARKET",
-                                "time_in_force": "GTC"
-                            }
                         }
                     ]
                 }
@@ -559,11 +538,10 @@ class LiveEdge5RAVFTrader:
                 if position_ref:
                     self.position_ref = position_ref
                 
-                print(f"✅ Entry order with exit plan created: {side} 25% of balance @ 25x leverage {SYMBOL}")
+                print(f"✅ Entry order with exit plan created: {side} 25% of balance @ 25x leverage {SYMBOL} - MARKET ORDER")
                 print(f"📊 TP1: {tp1_price} (60% scale-out) - POST-ONLY LIMIT")
                 print(f"📊 TP2: {tp2_price} (40% runner) - POST-ONLY LIMIT")
                 print(f"🛑 Stop Loss: {stop_loss_price} - MARKET")
-                print(f"🛑 Catastrophic Stop: {entry_price * (0.9910 if side == 'BUY' else 1.0090)} - MARKET")
                 print(f"📈 After TP1: Stop loss moves to breakeven automatically")
                 
                 return order_ref
