@@ -1308,7 +1308,7 @@ class LiveEdge5RAVFTrader:
     def _execute_exit(self, exit_reason, current):
         """Execute exit based on exit reason"""
         if not self.position:
-                return
+            return
             
         position = self.position
         exit_price = self._get_exit_price(current, position, exit_reason)
@@ -1843,8 +1843,17 @@ class LiveEdge5RAVFTrader:
                     print(f"⏳ No signal generated")
             else:
                 print(f"📊 Position already open, checking exit conditions...")
+                # Update position tracking
+                self._update_position_tracking(self.position, current)
+                
+                # Increment bars held
+                self.position['bars_held'] += 1
+                
                 # Check for exit conditions
-                self._check_exit_conditions(current)
+                exit_reason = self._check_exit_conditions(current, self.position)
+                if exit_reason:
+                    print(f"🚪 Exit condition detected: {exit_reason}")
+                    self._execute_exit(exit_reason, current)
             
         except Exception as e:
             print(f"❌ Error processing candle: {e}")
