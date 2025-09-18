@@ -5,9 +5,9 @@ PAPER_TRADING = True  # Set to False for live trading
 
 # COM API Configuration
 COM_BASE_URL = "http://localhost:8000"
-API_KEY = "UkFWRl8yMDI1MDkxOF8xNzQ4MTnzttqDrGFUBzAw5ytHSlbutqm_v_txxcjBm5f6g8k-lA"
-SECRET = "YzCtRLfEGxjrpNCDOUA146KgR10WTedzB8JiEom2tLR031Y-g5M8_VJD3eTMoKMJE56Efbb-B6C52tq4Nr-Aog"
-SALT = "5OYw8B2yCc6_IdOo25eNavAntwnwNyZux-nroed0si0"
+API_KEY = "UkFWRl8yMDI1MDkxOF8yMDU4NDVAibQoNKUlDR_SmPzIYHxui1E4kNPrpCmQADqKdu7pvw"
+SECRET = "1u28c-DX3vlys3u0-iNWFvRSnoy420jKDolC2bzH84Gc7HL2C1m5N4Gur7YEn4SdtN-ZN7n3E2YmQaDtirCSNw"
+SALT = "_L1X-cWBuqhu08NeBbv97gfTo8E_N9ON1TZhHIGiPN4"
 
 # Strategy Configuration
 STRATEGY_NAME = "RAVF_V2"
