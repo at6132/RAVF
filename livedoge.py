@@ -81,20 +81,10 @@ class COMWebSocketClient:
             
             print("✅ WebSocket authenticated successfully")
             
-            # Step 2: Subscribe to strategy and all events
+            # Step 2: Subscribe to strategy
             subscribe_msg = {
                 "type": "SUBSCRIBE",
-                "strategy_id": self.strategy_id,
-                "events": [
-                    "ORDER_UPDATE",
-                    "FILL", 
-                    "POSITION_UPDATE",
-                    "POSITION_CLOSED",
-                    "STOP_TRIGGERED",
-                    "TAKE_PROFIT_TRIGGERED",
-                    "POSITION_CLEANUP",
-                    "HEARTBEAT"
-                ]
+                "strategy_id": self.strategy_id
             }
             
             await self.websocket.send(json.dumps(subscribe_msg))
