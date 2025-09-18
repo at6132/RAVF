@@ -2395,12 +2395,24 @@ curl -X GET "http://localhost:8000/api/v1/balances/markets?market=crypto" \
             <div class="info-box">
                 <h4>Automatic Quantity Calculation</h4>
                 <ol style="margin-left: 20px; margin-bottom: 20px;">
-                    <li><strong>Balance Retrieval:</strong> System fetches current balance based on sizing mode</li>
+                    <li><strong>Environment Detection:</strong> System detects paper vs live trading environment</li>
+                    <li><strong>Balance Retrieval:</strong> Fetches current balance from appropriate broker (testnet for paper, live for live)</li>
                     <li><strong>Notional Calculation:</strong> Calculates USD amount: <code>balance × (percentage / 100)</code></li>
                     <li><strong>Cap/Floor Application:</strong> Applies upper and lower limits if specified</li>
                     <li><strong>Contract Conversion:</strong> Converts USD amount to contract quantity using current market price</li>
                     <li><strong>Lot Snapping:</strong> Snaps quantity to valid lot sizes for the symbol</li>
                 </ol>
+            </div>
+            
+            <h3>Environment Handling</h3>
+            <div class="info-box">
+                <h4>Paper vs Live Trading</h4>
+                <ul style="margin-left: 20px; margin-bottom: 20px;">
+                    <li><strong>Paper Trading:</strong> Uses testnet balance from broker's testnet API</li>
+                    <li><strong>Live Trading:</strong> Uses live balance from broker's production API</li>
+                    <li><strong>Automatic Detection:</strong> System automatically uses the correct balance based on order environment</li>
+                    <li><strong>Broker Configuration:</strong> Each broker is configured with testnet/live settings</li>
+                </ul>
             </div>
             
             <h3>Validation Rules</h3>
@@ -2719,6 +2731,31 @@ while position.status == "OPEN":
   }
 }
 
+// Position closed event
+{
+  "event_type": "POSITION_CLOSED",
+  "occurred_at": "2025-09-18T15:33:36.069Z",
+  "order_ref": "ord_1234567890_1234",
+  "position_ref": "pos_1234567890_1234",
+  "details": {
+    "symbol": "DOGE_USDT",
+    "side": "BUY",
+    "size": 1000.0,
+    "entry_price": 0.26574,
+    "exit_price": 0.27120,
+    "realized_pnl": 54.60,
+    "total_fees": 0.32,
+    "volume": 265.74,
+    "leverage": 25.0,
+    "duration_seconds": 3600,
+    "max_favorable_pct": 2.1,
+    "max_adverse_pct": -0.8,
+    "close_reason": "POSITION_CLOSED",
+    "open_time": "2025-09-18T14:33:36.069Z",
+    "close_time": "2025-09-18T15:33:36.069Z"
+  }
+}
+
 // Position cleanup event
 {
   "type": "POSITION_CLEANUP",
@@ -3004,6 +3041,11 @@ signature = create_websocket_signature("your_secret_key", timestamp, "your_api_k
                         <td><code>POSITION_UPDATE</code></td>
                         <td>Position changes</td>
                         <td>position_ref, state, pnl</td>
+                    </tr>
+                    <tr>
+                        <td><code>POSITION_CLOSED</code></td>
+                        <td>Position closed with final results</td>
+                        <td>position_ref, realized_pnl, exit_price, fees, duration</td>
                     </tr>
                     <tr>
                         <td><code>STOP_TRIGGERED</code></td>

@@ -81,10 +81,20 @@ class COMWebSocketClient:
             
             print("✅ WebSocket authenticated successfully")
             
-            # Step 2: Subscribe to strategy
+            # Step 2: Subscribe to strategy and all events
             subscribe_msg = {
                 "type": "SUBSCRIBE",
-                "strategy_id": self.strategy_id
+                "strategy_id": self.strategy_id,
+                "events": [
+                    "ORDER_UPDATE",
+                    "FILL", 
+                    "POSITION_UPDATE",
+                    "POSITION_CLOSED",
+                    "STOP_TRIGGERED",
+                    "TAKE_PROFIT_TRIGGERED",
+                    "POSITION_CLEANUP",
+                    "HEARTBEAT"
+                ]
             }
             
             await self.websocket.send(json.dumps(subscribe_msg))
@@ -117,6 +127,20 @@ class COMWebSocketClient:
         except Exception as e:
             print(f"❌ WebSocket error: {e}")
             self.connected = False
+    
+    async def acknowledge_heartbeat(self, heartbeat_id):
+        """Acknowledge a heartbeat to maintain connection"""
+        try:
+            ack_msg = {
+                "type": "HEARTBEAT_ACK",
+                "heartbeat_id": heartbeat_id,
+                "timestamp": int(time.time())
+            }
+            await self.websocket.send(json.dumps(ack_msg))
+            return True
+        except Exception as e:
+            print(f"❌ Failed to send heartbeat acknowledgment: {e}")
+            return False
     
     async def close(self):
         """Close WebSocket connection"""
@@ -247,6 +271,8 @@ class LiveEdge5RAVFTrader:
                 await self._handle_fill(event)
             elif event_type == 'POSITION_UPDATE':
                 await self._handle_position_update(event)
+            elif event_type == 'POSITION_CLOSED':
+                await self._handle_position_closed(event)
             elif event_type == 'STOP_TRIGGERED':
                 await self._handle_stop_triggered(event)
             elif event_type == 'TAKE_PROFIT_TRIGGERED':
@@ -254,8 +280,7 @@ class LiveEdge5RAVFTrader:
             elif event_type == 'POSITION_CLEANUP':
                 await self._handle_position_cleanup(event)
             elif event_type == 'HEARTBEAT':
-                # Just acknowledge heartbeat
-                pass
+                await self._handle_heartbeat(event)
             else:
                 print(f"📡 WebSocket event: {event_type}")
                         
@@ -334,6 +359,54 @@ class LiveEdge5RAVFTrader:
                     self.position['tp1_hit'] = True
                     print("✅ TP1 hit - 60% scale-out executed by COM")
     
+    async def _handle_position_closed(self, event):
+        """Handle position closed events with final results"""
+        position_ref = event.get('position_ref')
+        details = event.get('details', {})
+        
+        print(f"🔚 POSITION CLOSED: {position_ref}")
+        print(f"📊 Final Results:")
+        print(f"   Symbol: {details.get('symbol', 'N/A')}")
+        print(f"   Side: {details.get('side', 'N/A')}")
+        print(f"   Size: {details.get('size', 'N/A')}")
+        print(f"   Entry Price: {details.get('entry_price', 'N/A')}")
+        print(f"   Exit Price: {details.get('exit_price', 'N/A')}")
+        print(f"   Realized PnL: {details.get('realized_pnl', 'N/A')}")
+        print(f"   Total Fees: {details.get('total_fees', 'N/A')}")
+        print(f"   Volume: {details.get('volume', 'N/A')}")
+        print(f"   Leverage: {details.get('leverage', 'N/A')}")
+        print(f"   Duration: {details.get('duration_seconds', 'N/A')} seconds")
+        print(f"   Max Favorable: {details.get('max_favorable_pct', 'N/A')}%")
+        print(f"   Max Adverse: {details.get('max_adverse_pct', 'N/A')}%")
+        print(f"   Close Reason: {details.get('close_reason', 'N/A')}")
+        print(f"   Open Time: {details.get('open_time', 'N/A')}")
+        print(f"   Close Time: {details.get('close_time', 'N/A')}")
+        
+        # Update our position tracking
+        if position_ref == self.position_ref:
+            print("✅ Our position closed - updating local tracking")
+            self.position = None
+            self.position_ref = None
+            self.position_status = None
+            
+            # Update daily tracking if this was our position
+            realized_pnl = details.get('realized_pnl', 0)
+            close_reason = details.get('close_reason', 'UNKNOWN')
+            
+            if realized_pnl:
+                self.daily_pnl += realized_pnl
+                print(f"📈 Daily PnL updated: {self.daily_pnl:.4f}")
+            
+            if close_reason == 'POSITION_CLOSED':
+                print("📊 Position closed by COM exit plan")
+
+    async def _handle_heartbeat(self, event):
+        """Handle heartbeat events to maintain connection"""
+        timestamp = event.get('timestamp', 'N/A')
+        # Just acknowledge heartbeat - connection is alive
+        if hasattr(self, '_last_heartbeat'):
+            self._last_heartbeat = time.time()
+        
     async def _handle_position_cleanup(self, event):
         """Handle position cleanup events"""
         position_id = event.get('position_id')
@@ -347,6 +420,20 @@ class LiveEdge5RAVFTrader:
             self.position = None
             self.position_ref = None
             self.position_status = None
+    
+    async def _handle_heartbeat(self, event):
+        """Handle heartbeat events and send acknowledgment"""
+        heartbeat_id = event.get('heartbeat_id')
+        timestamp = event.get('timestamp')
+        
+        print(f"💓 Heartbeat received: {heartbeat_id} at {timestamp}")
+        
+        # Send acknowledgment back to COM
+        try:
+            await self.com_client.acknowledge_heartbeat(heartbeat_id)
+            print(f"✅ Heartbeat acknowledged: {heartbeat_id}")
+        except Exception as e:
+            print(f"❌ Failed to acknowledge heartbeat {heartbeat_id}: {e}")
     
     async def start_websocket_monitoring(self):
         """Start WebSocket monitoring in background"""
