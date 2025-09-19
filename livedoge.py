@@ -849,8 +849,18 @@ class LiveEdge5RAVFTrader:
         timestamp = int(time.time())
         
         payload = {
-            "quantity": quantity if quantity else "ALL",
-            "order_type": "MARKET"
+            "idempotency_key": f"close_{position_ref}_{timestamp}",
+            "environment": {
+                "sandbox": PAPER_TRADING
+            },
+            "amount": {
+                "type": "ALL" if quantity == "ALL" or quantity is None else "PERCENTAGE",
+                "value": 100.0 if quantity == "ALL" or quantity is None else float(quantity)
+            },
+            "execution": {
+                "order_type": "MARKET",
+                "time_in_force": "GTC"
+            }
         }
         
         body = json.dumps(payload)
