@@ -3152,6 +3152,110 @@ signature = create_websocket_signature("your_secret_key", timestamp, "your_api_k
 }</pre>
             </div>
 
+            <div class="warning-box">
+                <h4>⚠️ Critical: Understanding Authentication Responses</h4>
+                <p><strong>IMPORTANT:</strong> When you receive <code>{"status": "AUTH_ACK", "message": null}</code>, this means authentication was <strong>SUCCESSFUL</strong>, not failed!</p>
+                <ul style="margin-left: 20px; margin-bottom: 20px;">
+                    <li><strong>AUTH_ACK</strong> = Authentication successful ✅</li>
+                    <li><strong>AUTH_NACK</strong> = Authentication failed ❌</li>
+                </ul>
+                <p>If your client is treating <code>AUTH_ACK</code> as a failure, check your response parsing logic. The correct flow is:</p>
+                <ol style="margin-left: 20px; margin-bottom: 20px;">
+                    <li>Send AUTH message with HMAC signature</li>
+                    <li>Receive response with <code>status: "AUTH_ACK"</code></li>
+                    <li>Send SUBSCRIBE message</li>
+                    <li>Start receiving events</li>
+                </ol>
+            </div>
+
+            <h3>Complete Working Example</h3>
+            <p>Here's a complete working example that demonstrates proper WebSocket authentication and event handling:</p>
+            <div class="code-block">
+                <pre>import asyncio
+import websockets
+import json
+import hmac
+import hashlib
+import time
+
+async def connect_to_com_websocket():
+    """Complete WebSocket client example"""
+    
+    # Your API credentials
+    API_KEY = "your_api_key_here"
+    SECRET_KEY = "your_secret_key_here"
+    BASE_URL = "ws://localhost:8000"
+    STRATEGY_ID = "your_strategy_id"
+    
+    # Create signature
+    def create_signature(secret_key: str, timestamp: int, key_id: str) -> str:
+        data_string = f"{key_id}\n{timestamp}"
+        return hmac.new(
+            secret_key.encode('utf-8'),
+            data_string.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+    
+    try:
+        # Connect to WebSocket
+        async with websockets.connect(f"{BASE_URL}/api/v1/stream") as websocket:
+            print("✅ Connected to WebSocket")
+            
+            # Step 1: Authenticate
+            timestamp = int(time.time())
+            signature = create_signature(SECRET_KEY, timestamp, API_KEY)
+            
+            auth_message = {
+                "type": "AUTH",
+                "key_id": API_KEY,
+                "ts": timestamp,
+                "signature": signature
+            }
+            
+            await websocket.send(json.dumps(auth_message))
+            print(f"📤 Sent auth: {auth_message}")
+            
+            # Step 2: Wait for auth response
+            auth_response = await websocket.recv()
+            auth_data = json.loads(auth_response)
+            print(f"📥 Auth response: {auth_data}")
+            
+            # IMPORTANT: Check for AUTH_ACK (success), not AUTH_NACK (failure)
+            if auth_data.get("status") == "AUTH_ACK":
+                print("✅ Authentication successful!")
+                
+                # Step 3: Subscribe to strategy
+                subscribe_message = {
+                    "type": "SUBSCRIBE",
+                    "strategy_id": STRATEGY_ID,
+                    "events": ["ORDER_UPDATE", "FILL", "POSITION_UPDATE"]
+                }
+                
+                await websocket.send(json.dumps(subscribe_message))
+                print(f"📤 Sent subscribe: {subscribe_message}")
+                
+                # Step 4: Wait for subscribe response
+                subscribe_response = await websocket.recv()
+                subscribe_data = json.loads(subscribe_response)
+                print(f"📥 Subscribe response: {subscribe_data}")
+                
+                # Step 5: Listen for events
+                print("🎧 Listening for events...")
+                while True:
+                    event = await websocket.recv()
+                    event_data = json.loads(event)
+                    print(f"📨 Event: {event_data}")
+                    
+            else:
+                print(f"❌ Authentication failed: {auth_data}")
+                
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+# Run the example
+asyncio.run(connect_to_com_websocket())</pre>
+            </div>
+
             <h3>Testing WebSocket Authentication</h3>
             <p>The WebSocket authentication system has been thoroughly tested using the documented methods. The test results confirm:</p>
             <ul style="margin-left: 20px; margin-bottom: 20px;">

@@ -82,8 +82,8 @@ class COMWebSocketClient:
             auth_response = await self.websocket.recv()
             auth_data = json.loads(auth_response)
             
-            # Check for AUTH_SUCCESS or AUTH_ACK
-            if auth_data.get("type") not in ["AUTH_SUCCESS", "AUTH_ACK"]:
+            # Check for AUTH_ACK (success) - per updated docs
+            if auth_data.get("status") != "AUTH_ACK":
                 raise Exception(f"WebSocket authentication failed: {auth_data}")
             
             print("✅ WebSocket authenticated successfully")
@@ -98,8 +98,8 @@ class COMWebSocketClient:
             sub_response = await self.websocket.recv()
             sub_data = json.loads(sub_response)
             
-            # Check for SUBSCRIBE_SUCCESS or SUBSCRIBED
-            if sub_data.get("type") not in ["SUBSCRIBE_SUCCESS", "SUBSCRIBED"]:
+            # Check for SUBSCRIBED status - per updated docs
+            if sub_data.get("status") != "SUBSCRIBED":
                 raise Exception(f"WebSocket subscription failed: {sub_data}")
             
             print(f"✅ WebSocket subscribed to strategy: {self.strategy_id}")
@@ -317,12 +317,12 @@ class LiveEdge5RAVFTrader:
             elif event_type == 'HEARTBEAT':
                 print(f"💓 Processing HEARTBEAT...")
                 await self._handle_heartbeat(event)
-            elif event_type == 'AUTH_SUCCESS':
-                print(f"🔐 AUTH_SUCCESS received - WebSocket authenticated!")
-            elif event_type == 'AUTH_ERROR':
-                print(f"❌ AUTH_ERROR received - Authentication failed!")
-            elif event_type == 'SUBSCRIBE_SUCCESS':
-                print(f"✅ SUBSCRIBE_SUCCESS received - Successfully subscribed to strategy!")
+            elif event_type == 'AUTH_ACK':
+                print(f"🔐 AUTH_ACK received - WebSocket authenticated!")
+            elif event_type == 'AUTH_NACK':
+                print(f"❌ AUTH_NACK received - Authentication failed!")
+            elif event_type == 'SUBSCRIBED':
+                print(f"✅ SUBSCRIBED received - Successfully subscribed to strategy!")
             elif event_type == 'SUBSCRIBE_ERROR':
                 print(f"❌ SUBSCRIBE_ERROR received - Subscription failed!")
             else:
