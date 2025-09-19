@@ -59,7 +59,13 @@ class COMWebSocketClient:
             uri = f"{self.base_url}/api/v1/stream"
             print(f"🔌 Connecting to WebSocket: {uri}")
             
-            self.websocket = await websockets.connect(uri)
+            # Enable ping/pong to maintain connection
+            self.websocket = await websockets.connect(
+                uri,
+                ping_interval=20,  # Send ping every 20 seconds
+                ping_timeout=10,   # Wait 10 seconds for pong
+                close_timeout=10   # Wait 10 seconds for close
+            )
             
             # Step 1: Authenticate
             timestamp = int(time.time())
@@ -105,12 +111,29 @@ class COMWebSocketClient:
             return False
     
     async def listen_for_events(self, event_handler):
-        """Listen for WebSocket events and handle them"""
+        """Listen for WebSocket events with periodic ping to maintain connection"""
         try:
-            async for message in self.websocket:
-                event = json.loads(message)
-                await event_handler(event)
-                
+            last_ping = time.time()
+            
+            while self.connected:
+                try:
+                    # Set a timeout for receiving messages
+                    message = await asyncio.wait_for(self.websocket.recv(), timeout=30.0)
+                    event = json.loads(message)
+                    await event_handler(event)
+                    
+                except asyncio.TimeoutError:
+                    # Send periodic ping to keep connection alive
+                    current_time = time.time()
+                    if current_time - last_ping > 25:  # Ping every 25 seconds
+                        try:
+                            await self.websocket.ping()
+                            last_ping = current_time
+                            print("🏓 WebSocket ping sent to maintain connection")
+                        except Exception as e:
+                            print(f"❌ WebSocket ping failed: {e}")
+                            break
+                        
         except websockets.exceptions.ConnectionClosed:
             print("🔌 WebSocket connection closed")
             self.connected = False
@@ -390,12 +413,6 @@ class LiveEdge5RAVFTrader:
             if close_reason == 'POSITION_CLOSED':
                 print("📊 Position closed by COM exit plan")
 
-    async def _handle_heartbeat(self, event):
-        """Handle heartbeat events to maintain connection"""
-        timestamp = event.get('timestamp', 'N/A')
-        # Just acknowledge heartbeat - connection is alive
-        if hasattr(self, '_last_heartbeat'):
-            self._last_heartbeat = time.time()
         
     async def _handle_position_cleanup(self, event):
         """Handle position cleanup events"""
@@ -420,10 +437,13 @@ class LiveEdge5RAVFTrader:
         
         # Send acknowledgment back to COM
         try:
-            await self.com_client.acknowledge_heartbeat(heartbeat_id)
-            print(f"✅ Heartbeat acknowledged: {heartbeat_id}")
+            success = await self.com_client.acknowledge_heartbeat(heartbeat_id)
+            if success:
+                print(f"✅ Heartbeat acknowledged: {heartbeat_id}")
+            else:
+                print(f"❌ Failed to acknowledge heartbeat: {heartbeat_id}")
         except Exception as e:
-            print(f"❌ Failed to acknowledge heartbeat {heartbeat_id}: {e}")
+            print(f"❌ Heartbeat acknowledgment error: {e}")
     
     async def start_websocket_monitoring(self):
         """Start WebSocket monitoring in background"""
