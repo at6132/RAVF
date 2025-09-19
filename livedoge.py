@@ -43,13 +43,9 @@ class COMWebSocketClient:
         self.position_updates = {}
         self.order_updates = {}
     
-    def create_hmac_signature(self, timestamp, method, path, body):
+    def create_hmac_signature(self, timestamp, key_id):
         """Create HMAC signature for WebSocket authentication"""
-        # Use the same HMAC function as the main trader
-        return create_working_hmac_signature(timestamp, method, path, body)
-        
-    def create_websocket_signature(self, timestamp, key_id):
-        """Create HMAC signature for WebSocket authentication"""
+        # WebSocket uses different signature format: key_id + newline + timestamp
         data_string = f"{key_id}\n{timestamp}"
         signature = hmac.new(
             self.secret_key.encode('utf-8'),
@@ -57,6 +53,7 @@ class COMWebSocketClient:
             hashlib.sha256
         ).hexdigest()
         return signature
+        
     
     async def connect_and_authenticate(self):
         """Connect to WebSocket and authenticate"""
@@ -72,14 +69,13 @@ class COMWebSocketClient:
                 close_timeout=10   # Wait 10 seconds for close
             )
             
-            # Step 1: Authenticate (COM handles timestamp management)
             # Step 1: Authenticate with required fields
             timestamp = int(time.time())
             auth_msg = {
                 "type": "AUTH",
                 "key_id": self.api_key,
                 "ts": timestamp,
-                "signature": self.create_hmac_signature(timestamp, "POST", "/ws/auth", "")
+                "signature": self.create_hmac_signature(timestamp, self.api_key)
             }
             
             await self.websocket.send(json.dumps(auth_msg))
