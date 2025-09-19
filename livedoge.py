@@ -877,7 +877,7 @@ class LiveEdge5RAVFTrader:
                 "type": "ALL" if quantity == "ALL" or quantity is None else "PERCENTAGE",
                 "value": 100.0 if quantity == "ALL" or quantity is None else float(quantity)
             },
-            "execution": {
+            "order": {
                 "order_type": "MARKET",
                 "time_in_force": "GTC"
             }
