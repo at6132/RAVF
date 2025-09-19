@@ -42,6 +42,11 @@ class COMWebSocketClient:
         self.connected = False
         self.position_updates = {}
         self.order_updates = {}
+    
+    def create_hmac_signature(self, timestamp, method, path, body):
+        """Create HMAC signature for WebSocket authentication"""
+        # Use the same HMAC function as the main trader
+        return create_working_hmac_signature(timestamp, method, path, body)
         
     def create_websocket_signature(self, timestamp, key_id):
         """Create HMAC signature for WebSocket authentication"""
@@ -68,16 +73,21 @@ class COMWebSocketClient:
             )
             
             # Step 1: Authenticate (COM handles timestamp management)
+            # Step 1: Authenticate with required fields
+            timestamp = int(time.time())
             auth_msg = {
                 "type": "AUTH",
-                "key_id": self.api_key
+                "key_id": self.api_key,
+                "ts": timestamp,
+                "signature": self.create_hmac_signature(timestamp, "POST", "/ws/auth", "")
             }
             
             await self.websocket.send(json.dumps(auth_msg))
             auth_response = await self.websocket.recv()
             auth_data = json.loads(auth_response)
             
-            if auth_data.get("status") != "AUTH_ACK":
+            # Check for AUTH_SUCCESS or AUTH_ACK
+            if auth_data.get("type") not in ["AUTH_SUCCESS", "AUTH_ACK"]:
                 raise Exception(f"WebSocket authentication failed: {auth_data}")
             
             print("✅ WebSocket authenticated successfully")
@@ -92,7 +102,8 @@ class COMWebSocketClient:
             sub_response = await self.websocket.recv()
             sub_data = json.loads(sub_response)
             
-            if sub_data.get("status") != "SUBSCRIBED":
+            # Check for SUBSCRIBE_SUCCESS or SUBSCRIBED
+            if sub_data.get("type") not in ["SUBSCRIBE_SUCCESS", "SUBSCRIBED"]:
                 raise Exception(f"WebSocket subscription failed: {sub_data}")
             
             print(f"✅ WebSocket subscribed to strategy: {self.strategy_id}")
