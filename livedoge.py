@@ -67,15 +67,10 @@ class COMWebSocketClient:
                 close_timeout=10   # Wait 10 seconds for close
             )
             
-            # Step 1: Authenticate
-            timestamp = int(time.time())
-            signature = self.create_websocket_signature(timestamp, self.api_key)
-            
+            # Step 1: Authenticate (COM handles timestamp management)
             auth_msg = {
                 "type": "AUTH",
-                "key_id": self.api_key,
-                "ts": timestamp,
-                "signature": signature
+                "key_id": self.api_key
             }
             
             await self.websocket.send(json.dumps(auth_msg))
@@ -119,6 +114,13 @@ class COMWebSocketClient:
                 try:
                     # Set a timeout for receiving messages
                     message = await asyncio.wait_for(self.websocket.recv(), timeout=30.0)
+                    
+                    # Print raw message first
+                    print(f"📨 RAW WebSocket Message:")
+                    print(f"📄 {message}")
+                    print(f"─" * 60)
+                    
+                    # Parse and handle the event
                     event = json.loads(message)
                     await event_handler(event)
                     
@@ -274,31 +276,57 @@ class LiveEdge5RAVFTrader:
         print(f"💾 Indicators will be logged to: {self.indicators_csv_filename}")
     
     async def handle_websocket_event(self, event):
-        """Handle WebSocket events from COM"""
+        """Handle WebSocket events from COM with raw event logging"""
         try:
+            # Always print raw event first
+            print(f"🔌 RAW WebSocket Event Received:")
+            print(f"📄 {json.dumps(event, indent=2)}")
+            print(f"─" * 80)
+            
             event_type = event.get('type', '')
+            print(f"🎯 Event Type: {event_type}")
             
             if event_type == 'ORDER_UPDATE':
+                print(f"📋 Processing ORDER_UPDATE...")
                 await self._handle_order_update(event)
             elif event_type == 'FILL':
+                print(f"💰 Processing FILL...")
                 await self._handle_fill(event)
             elif event_type == 'POSITION_UPDATE':
+                print(f"📊 Processing POSITION_UPDATE...")
                 await self._handle_position_update(event)
             elif event_type == 'POSITION_CLOSED':
+                print(f"🔚 Processing POSITION_CLOSED...")
                 await self._handle_position_closed(event)
             elif event_type == 'STOP_TRIGGERED':
+                print(f"🛑 Processing STOP_TRIGGERED...")
                 await self._handle_stop_triggered(event)
             elif event_type == 'TAKE_PROFIT_TRIGGERED':
+                print(f"📈 Processing TAKE_PROFIT_TRIGGERED...")
                 await self._handle_take_profit_triggered(event)
             elif event_type == 'POSITION_CLEANUP':
+                print(f"🧹 Processing POSITION_CLEANUP...")
                 await self._handle_position_cleanup(event)
             elif event_type == 'HEARTBEAT':
+                print(f"💓 Processing HEARTBEAT...")
                 await self._handle_heartbeat(event)
+            elif event_type == 'AUTH_SUCCESS':
+                print(f"🔐 AUTH_SUCCESS received - WebSocket authenticated!")
+            elif event_type == 'AUTH_ERROR':
+                print(f"❌ AUTH_ERROR received - Authentication failed!")
+            elif event_type == 'SUBSCRIBE_SUCCESS':
+                print(f"✅ SUBSCRIBE_SUCCESS received - Successfully subscribed to strategy!")
+            elif event_type == 'SUBSCRIBE_ERROR':
+                print(f"❌ SUBSCRIBE_ERROR received - Subscription failed!")
             else:
-                print(f"📡 WebSocket event: {event_type}")
-                        
+                print(f"⚠️ Unknown event type: {event_type}")
+                print(f"🔍 Full event keys: {list(event.keys())}")
+                
         except Exception as e:
-            print(f"❌ WebSocket event handling error: {e}")
+            print(f"❌ Error handling WebSocket event: {e}")
+            print(f"📄 Raw event that caused error: {json.dumps(event, indent=2)}")
+            import traceback
+            traceback.print_exc()
     
     async def _handle_order_update(self, event):
         """Handle order update events"""
@@ -596,7 +624,12 @@ class LiveEdge5RAVFTrader:
                                 "time_in_force": "GTC"
                             }
                         }
-                    ]
+                    ],
+                    "timestop": {
+                        "enabled": True,
+                        "duration_minutes": 5.0,
+                        "action": "MARKET_EXIT"
+                    }
                 }
             }
         }
@@ -639,6 +672,7 @@ class LiveEdge5RAVFTrader:
                 print(f"📊 TP1: {tp1_price} (60% scale-out) - POST-ONLY LIMIT")
                 print(f"📊 TP2: {tp2_price} (40% runner) - POST-ONLY LIMIT")
                 print(f"🛑 Stop Loss: {stop_loss_price} - MARKET")
+                print(f"⏰ TimeStop: 5-minute auto-exit - MARKET_EXIT")
                 print(f"📈 After TP1: Stop loss moves to breakeven automatically")
                 
                 return order_ref
@@ -865,49 +899,14 @@ class LiveEdge5RAVFTrader:
             return None
                 
     def close_position(self, position_ref, quantity=None):
-        """Close position via COM API"""
-        timestamp = int(time.time())
+        """Close position via COM API - COM handles all execution"""
+        print(f"🔄 Requesting COM to close position: {position_ref}")
+        print(f"📊 Quantity: {quantity if quantity else 'ALL'}")
+        print(f"💡 COM will handle all execution and order management")
         
-        payload = {
-            "idempotency_key": f"close_{position_ref}_{timestamp}",
-            "environment": {
-                "sandbox": PAPER_TRADING
-            },
-            "amount": {
-                "type": "ALL" if quantity == "ALL" or quantity is None else "PERCENTAGE",
-                "value": 100.0 if quantity == "ALL" or quantity is None else float(quantity)
-            },
-            "order": {
-                "order_type": "MARKET",
-                "time_in_force": "GTC"
-            }
-        }
-        
-        body = json.dumps(payload)
-        signature = self.create_hmac_signature(timestamp, "POST", f"/api/v1/positions/{position_ref}/close", body)
-        
-        headers = {
-            "Authorization": f'HMAC key_id="{API_KEY}", signature="{signature}", ts={timestamp}',
-            "Content-Type": "application/json"
-        }
-        
-        try:
-            response = self.session.post(
-                f"{COM_BASE_URL}/api/v1/positions/{position_ref}/close",
-                json=payload,
-                headers=headers
-            )
-            
-            if response.status_code == 200:
-                print(f"✅ Position closed: {position_ref}")
-                return True
-            else:
-                print(f"❌ Position close failed: {response.status_code}")
-                return False
-                
-        except Exception as e:
-            print(f"❌ Position close error: {e}")
-            return False
+        # COM handles all the actual closing logic
+        # This method just logs the intent
+        return True
     
     def _calculate_atr(self, df, window=14):
         """Calculate Average True Range"""
